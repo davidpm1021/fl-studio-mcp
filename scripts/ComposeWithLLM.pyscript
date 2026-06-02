@@ -91,6 +91,7 @@ def process_mcp_request():
         # Process all requests in order
         total_notes = 0
         notes_deleted = 0
+        time_signature = None
 
         for request in requests:
             action = request.get("action")
@@ -113,17 +114,32 @@ def process_mcp_request():
                 result = add_notes_to_piano_roll(request)
                 if result and result.get("status") == "success":
                     total_notes += result.get("notes_added", 0)
+            elif action == "get_time_signature":
+                # Project-level time signature (read-only). Not the playlist
+                # time signature markers, which the API does not expose.
+                time_signature = {
+                    "numerator": flp.score.tsnum,
+                    "denominator": flp.score.tsden,
+                }
 
         # Clear the request queue after processing
         with open(REQUEST_FILE, 'w') as f:
             f.write("[]")
 
-        return {
+        response = {
             "status": "success",
             "requests_processed": len(requests),
             "notes_added": total_notes,
             "notes_deleted": notes_deleted
         }
+
+        # Surface the time signature at the top level so the MCP server can read
+        # it directly from the response file.
+        if time_signature is not None:
+            response["numerator"] = time_signature["numerator"]
+            response["denominator"] = time_signature["denominator"]
+
+        return response
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

@@ -213,6 +213,8 @@ fl-studio-mcp
 | `fl_get_song_length` | Get song duration |
 | `fl_set_loop_mode` | Switch between pattern/song mode |
 | `fl_set_playback_speed` | Adjust playback speed (0.25x-4x) |
+| `fl_set_tempo` | Set project tempo in BPM (10-1000) |
+| `fl_get_tempo` | Get current project tempo in BPM |
 
 ### Mixer
 
@@ -280,6 +282,25 @@ fl-studio-mcp
 | `fl_trigger_script` | Manually trigger the FL Studio script |
 | `fl_get_piano_roll_info` | Get piano roll system info |
 | `fl_clear_request_queue` | Cancel pending queued changes |
+
+### General
+
+| Tool | Description |
+|------|-------------|
+| `fl_undo` | Undo the last action |
+| `fl_redo` | Redo the next action |
+| `fl_save_project` | Save the project to its current file |
+| `fl_get_project_info` | Get tempo, version, PPQ, modified flag, etc. |
+| `fl_get_time_signature` | Get the project time signature (Piano Roll Scripting; piano roll must be open) |
+
+> `fl_get_time_signature` uses the **Piano Roll Scripting** context (keystroke trigger), not the MIDI bridge. The piano roll must be open in FL Studio. All other General tools use the MIDI bridge.
+
+### UI / Windows
+
+| Tool | Description |
+|------|-------------|
+| `fl_focus_window` | Focus a window (mixer, channel_rack, playlist, piano_roll, browser) |
+| `fl_get_window_state` | Get focused/visible windows and focused caption |
 
 ## Example Workflows
 
