@@ -950,18 +950,13 @@ def handle_general_get_project_info() -> dict:
     except Exception:
         info["tempo"] = None
 
-    # Song length. The formatted string's exact shape is unconfirmed, so keep
-    # the leading numeric token and pass through the raw string for safety.
+    # Song length in bars. SONGLENGTH_BARS (3) returns the bars component of the
+    # song length in B:S:T format. REC_SongLength linked values come back empty,
+    # so use transport.getSongLength instead.
     try:
-        length_str = device.getLinkedValueString(midi.REC_SongLength)
-        info["song_length_raw"] = length_str
-        try:
-            info["song_length_bars"] = int(float(length_str.split()[0]))
-        except (ValueError, IndexError):
-            info["song_length_bars"] = None
+        info["song_length_bars"] = transport.getSongLength(3)
     except Exception:
         info["song_length_bars"] = None
-        info["song_length_raw"] = None
 
     # FL Studio version as "major.minor.release".
     try:
@@ -1011,8 +1006,12 @@ def handle_ui_focus_window(params: dict) -> dict:
     window = params.get("window", "")
     if window not in _WINDOW_MAP:
         return {"error": "Unknown window: %s" % window}
-    ui.setFocused(_WINDOW_MAP[window])
-    return {"focused_window": window}
+    idx = _WINDOW_MAP[window]
+    # showWindow brings the window to the front and reliably moves focus among
+    # docked windows; setFocused alone often does not take effect. Call both.
+    ui.showWindow(idx)
+    ui.setFocused(idx)
+    return {"focused_window": window, "focused": ui.getFocused(idx)}
 
 
 def handle_ui_get_window_state() -> dict:
