@@ -213,8 +213,6 @@ fl-studio-mcp
 | `fl_get_song_length` | Get song duration |
 | `fl_set_loop_mode` | Switch between pattern/song mode |
 | `fl_set_playback_speed` | Adjust playback speed (0.25x-4x) |
-| `fl_set_tempo` | Set project tempo in BPM (10-1000) |
-| `fl_get_tempo` | Get current project tempo in BPM |
 
 ### Mixer
 
@@ -287,6 +285,8 @@ fl-studio-mcp
 
 | Tool | Description |
 |------|-------------|
+| `fl_set_tempo` | Set project tempo in BPM (10-1000) |
+| `fl_get_tempo` | Get current project tempo in BPM |
 | `fl_undo` | Undo the last action |
 | `fl_redo` | Redo the next action |
 | `fl_save_project` | Save the project to its current file |

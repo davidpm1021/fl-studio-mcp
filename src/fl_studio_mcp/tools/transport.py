@@ -13,59 +13,6 @@ def register_transport_tools(mcp: FastMCP) -> None:
     from fl_studio_mcp.utils.connection import get_connection
 
     @mcp.tool()
-    def fl_set_tempo(bpm: float) -> dict:
-        """Set the project tempo in BPM.
-
-        Tempo is written as an FL Studio REC event (it has no dedicated setter).
-
-        Args:
-            bpm: Target tempo in beats per minute. Valid range 10-1000.
-        """
-        if not 10.0 <= bpm <= 1000.0:
-            return {
-                "success": False,
-                "error": "bpm must be between 10 and 1000",
-                "error_code": "INVALID_ARGS",
-            }
-
-        conn = get_connection()
-        try:
-            result = conn.send_command("general.setTempo", {"bpm": bpm})
-        except RuntimeError as e:
-            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
-
-        if not result.get("success", False):
-            return {
-                "success": False,
-                "error": result.get("error", "Unknown error"),
-                "error_code": "API_ERROR",
-            }
-
-        return {"success": True, "new_tempo": result.get("new_tempo", bpm)}
-
-    @mcp.tool()
-    def fl_get_tempo() -> dict:
-        """Get the current project tempo in BPM.
-
-        Reads the formatted REC event string (e.g. "124.0 BPM") and parses it,
-        because the normalized linked value is not directly convertible to BPM.
-        """
-        conn = get_connection()
-        try:
-            result = conn.send_command("general.getTempo")
-        except RuntimeError as e:
-            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
-
-        if not result.get("success", False):
-            return {
-                "success": False,
-                "error": result.get("error", "Unknown error"),
-                "error_code": "API_ERROR",
-            }
-
-        return {"success": True, "tempo": result.get("tempo")}
-
-    @mcp.tool()
     def fl_play() -> str:
         """Start or pause FL Studio playback.
 

@@ -14,7 +14,7 @@ the FLStudioMCP MIDI controller enabled (and, for `fl_get_time_signature`, the
 
 ---
 
-## Transport (MIDI bridge)
+## General (MIDI bridge)
 
 ### `fl_set_tempo`
 
@@ -27,10 +27,6 @@ the FLStudioMCP MIDI controller enabled (and, for `fl_get_time_signature`, the
 
 - [ ] Set tempo to 140, then `fl_get_tempo()` → `{"success": true, "tempo": 140.0}`.
 - [ ] Set a fractional tempo (e.g. 128.5), then `fl_get_tempo()` → matches.
-
----
-
-## General (MIDI bridge)
 
 ### `fl_undo`
 
