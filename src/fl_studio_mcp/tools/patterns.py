@@ -27,8 +27,13 @@ def register_patterns_tools(mcp: FastMCP) -> None:
 
         Returns patterns by 1-based index. ``length_beats`` is the pattern
         length in beats. ``color`` is an FL Studio color int (also given as
-        ``rgb``). The list covers indices 1..pattern_count; patterns that have
-        never been modified from the default state may not appear.
+        ``rgb``). ``count`` is FL Studio's count of patterns modified from the
+        default empty state; ``active`` is the currently active pattern index.
+
+        The list covers indices 1..max(count, active), so the active pattern
+        always appears even on a fresh project. Patterns modified at
+        non-contiguous indices beyond that range may not appear (an FL Studio
+        API limitation).
         """
         conn = get_connection()
         try:
@@ -46,6 +51,7 @@ def register_patterns_tools(mcp: FastMCP) -> None:
         return {
             "success": True,
             "count": result.get("count"),
+            "active": result.get("active"),
             "patterns": result.get("patterns", []),
         }
 

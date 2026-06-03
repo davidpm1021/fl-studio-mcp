@@ -112,7 +112,8 @@ most reliable way to clear FL's in-memory script cache) before testing.
 
 ### `fl_list_patterns`
 
-- [ ] On a project with a few patterns, `fl_list_patterns()` → `{"success": true, "count": <int>, "patterns": [{index, name, color, rgb, length_beats, selected}, ...]}` with indices starting at 1.
+- [ ] On a project with a few patterns, `fl_list_patterns()` → `{"success": true, "count": <int>, "active": <int>, "patterns": [{index, name, color, rgb, length_beats, selected}, ...]}` with indices starting at 1.
+- [ ] On a fresh project (no pattern modified yet), the list still includes the active pattern. Note: `count` is FL's count of *modified* patterns (0 on a fresh project); the list iterates 1..max(count, active), so the active pattern always appears.
 
 ### `fl_get_current_pattern`
 

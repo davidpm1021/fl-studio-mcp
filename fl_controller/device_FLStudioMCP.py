@@ -1087,12 +1087,21 @@ def _pattern_summary(index: int) -> dict:
 
 
 def handle_patterns_list() -> dict:
-    """List patterns by 1-based index (1..patternCount)."""
+    """List patterns by 1-based index.
+
+    patternCount() only counts patterns modified from their default empty state,
+    so on a fresh project it returns 0 even though the active pattern exists.
+    Iterate up to max(patternCount, patternNumber) so the active pattern always
+    appears. Non-contiguous modified patterns beyond that range may still be
+    missed (an inherent API limitation; see KNOWN_GAPS).
+    """
     count = patterns.patternCount()
+    active = patterns.patternNumber()
+    upper = count if count >= active else active
     result = []
-    for i in range(1, count + 1):
+    for i in range(1, upper + 1):
         result.append(_pattern_summary(i))
-    return {"count": count, "patterns": result}
+    return {"count": count, "active": active, "patterns": result}
 
 
 def handle_patterns_get_current() -> dict:
