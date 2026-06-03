@@ -210,6 +210,7 @@ fl-studio-mcp
 | `fl_record` | Toggle recording |
 | `fl_get_transport_status` | Get playback/recording state |
 | `fl_set_song_position` | Set playback position |
+| `fl_get_song_position` | Get current playback position (bars/ms/seconds/absticks) |
 | `fl_get_song_length` | Get song duration |
 | `fl_set_loop_mode` | Switch between pattern/song mode |
 | `fl_set_playback_speed` | Adjust playback speed (0.25x-4x) |
@@ -291,6 +292,8 @@ fl-studio-mcp
 | `fl_redo` | Redo the next action |
 | `fl_save_project` | Save the project to its current file |
 | `fl_get_project_info` | Get tempo, version, PPQ, modified flag, etc. |
+| `fl_is_project_modified` | Check whether the project has unsaved changes |
+| `fl_get_undo_history` | Get position within the undo history (counts only; step names not in API) |
 | `fl_get_time_signature` | Get the project time signature (Piano Roll Scripting; piano roll must be open) |
 
 > `fl_get_time_signature` uses the **Piano Roll Scripting** context (keystroke trigger), not the MIDI bridge. The piano roll must be open in FL Studio. All other General tools use the MIDI bridge.
@@ -301,6 +304,20 @@ fl-studio-mcp
 |------|-------------|
 | `fl_focus_window` | Focus a window (mixer, channel_rack, playlist, piano_roll, browser) |
 | `fl_get_window_state` | Get focused/visible windows and focused caption |
+
+### Patterns
+
+Patterns are **1-indexed**. FL Studio's API cannot *create* new patterns, only
+operate on existing ones.
+
+| Tool | Description |
+|------|-------------|
+| `fl_list_patterns` | List patterns with name, color, length (beats), and selection |
+| `fl_get_current_pattern` | Get the active pattern index and name |
+| `fl_select_pattern` | Select/jump to a pattern by index |
+| `fl_set_pattern_name` | Rename a pattern |
+| `fl_set_pattern_color` | Set a pattern's color (RGB 0-255) |
+| `fl_get_pattern_length` | Get a pattern's length in beats |
 
 ## Example Workflows
 

@@ -36,6 +36,36 @@ no other API surface for saving to a specified path.
 `fl_save_project` (save to the current file via `FPT_Save`) is implemented and
 ships in Sprint 1.
 
+## Deferred in Sprint 2
+
+### `fl_set_loop_region(start_bars, end_bars)` / `fl_clear_loop_region()`
+
+**Status:** No clean API — deferred (revisit in Sprint 4, arrangement).
+
+There is no MIDI Controller Scripting function to set the song's loop/time
+selection region by bar range. `transport.setLoopMode()` only *toggles* between
+pattern and song loop mode (it takes no arguments and sets no region), and
+`transport.getLoopMode()` only reads that mode. The `FPT_Loop` (15) and
+`FPT_LoopRecord` (113) global-transport commands are likewise toggles, not
+region setters.
+
+The closest candidate is `arrangement.liveSelection(time, stop)` plus
+`arrangement.liveSelectionStart()`, but these manage the **performance-mode live
+selection** (absolute ticks, one endpoint at a time) and are explicitly flagged
+"HELP WANTED / ???" in the stubs — not a reliable bars-based loop-region setter.
+Deferred to the Sprint 4 arrangement work, where the selection/markers APIs are
+tackled as a group.
+
+### `fl_get_undo_history` — step names not available
+
+**Status:** Partially implemented (position only).
+
+`fl_get_undo_history` ships in Sprint 2, but the API exposes only the **position
+and counts** within the undo history (`getUndoLevelHint`, `getUndoHistoryLast`,
+`getUndoHistoryPos`, `getUndoHistoryCount`). There is no function that returns
+the **text/description** of individual undo steps, so the tool cannot return a
+named list of history entries — only where you are in the history.
+
 ## Other hard API limits (from the spec, not attempted)
 
 | Capability | Reality |

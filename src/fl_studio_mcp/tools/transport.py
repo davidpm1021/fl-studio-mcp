@@ -156,3 +156,46 @@ def register_transport_tools(mcp: FastMCP) -> None:
             return f"Error: {result['error']}"
 
         return f"Playback speed set to {speed}x"
+
+    @mcp.tool()
+    def fl_get_song_position(mode: str = "bars") -> dict:
+        """Get the current playback position.
+
+        Note: this reports the position in the song when in song loop mode, or
+        the position within the current pattern when in pattern loop mode
+        (mirrors FL Studio's ``transport.getSongPos`` behaviour).
+
+        Args:
+            mode: Output format. One of:
+                  "bars"     -> bars:steps:ticks components plus a "B:S:T" hint
+                               string (default)
+                  "ms"       -> milliseconds (int)
+                  "seconds"  -> seconds (int)
+                  "absticks" -> absolute ticks (int)
+        """
+        valid = ("bars", "ms", "seconds", "absticks")
+        if mode not in valid:
+            return {
+                "success": False,
+                "error": f"mode must be one of {valid}",
+                "error_code": "INVALID_ARGS",
+            }
+
+        conn = get_connection()
+        try:
+            result = conn.send_command("transport.getSongPosition", {"mode": mode})
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
+
+        if not result.get("success", False):
+            return {
+                "success": False,
+                "error": result.get("error", "Unknown error"),
+                "error_code": "API_ERROR",
+            }
+
+        out = {"success": True, "mode": result.get("mode", mode)}
+        for key in ("bars", "steps", "ticks", "hint", "ms", "seconds", "absticks"):
+            if key in result:
+                out[key] = result[key]
+        return out
