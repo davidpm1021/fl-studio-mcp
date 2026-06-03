@@ -312,10 +312,15 @@ def collect_markers():
 
 
 def collect_timeline_selection():
-    """Collect the piano roll timeline selection (start is -1 if none)."""
+    """Collect the piano roll timeline selection.
+
+    FL signals "no selection" inconsistently (the stub says start is -1, but in
+    practice end can come back as -1 with start 0), so require both endpoints to
+    be non-negative and end > start.
+    """
     ppq = flp.score.PPQ
     start, end = flp.score.getTimelineSelection()
-    has_selection = start != -1
+    has_selection = start >= 0 and end >= 0 and end > start
     return {
         "has_selection": has_selection,
         "selection_start_ticks": start,

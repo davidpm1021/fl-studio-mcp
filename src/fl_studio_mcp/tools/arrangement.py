@@ -99,16 +99,26 @@ def register_arrangement_tools(mcp: FastMCP) -> None:
                 "error_code": "API_ERROR",
             }
 
-        return {
+        has_selection = result.get("has_selection")
+        out = {
             "success": True,
-            "has_selection": result.get("has_selection"),
+            "has_selection": has_selection,
             "start_ticks": result.get("start_ticks"),
             "end_ticks": result.get("end_ticks"),
-            "start_bars": result.get("start_bars"),
-            "end_bars": result.get("end_bars"),
-            "start_hint": result.get("start_hint"),
-            "end_hint": result.get("end_hint"),
         }
+        # When nothing is selected FL reports a start of -1; the derived bars and
+        # B:S:T hints are meaningless in that case, so omit them.
+        if has_selection:
+            out["start_bars"] = result.get("start_bars")
+            out["end_bars"] = result.get("end_bars")
+            out["start_hint"] = result.get("start_hint")
+            out["end_hint"] = result.get("end_hint")
+        else:
+            out["start_bars"] = None
+            out["end_bars"] = None
+            out["start_hint"] = None
+            out["end_hint"] = None
+        return out
 
     @mcp.tool()
     def fl_set_selection(
@@ -282,11 +292,18 @@ def register_arrangement_tools(mcp: FastMCP) -> None:
                 "roll may be closed.",
                 "error_code": "FL_PIANO_ROLL_CLOSED",
             }
+        start = data.get("selection_start_ticks")
+        end = data.get("selection_end_ticks")
+        # FL signals "no selection" inconsistently (start -1, or end -1 with
+        # start 0), so require both endpoints non-negative and end > start.
+        has_selection = (
+            start is not None and end is not None and start >= 0 and end > start
+        )
         return {
             "success": True,
-            "has_selection": data.get("has_selection"),
-            "start_ticks": data.get("selection_start_ticks"),
-            "end_ticks": data.get("selection_end_ticks"),
-            "start_beats": data.get("selection_start_beats"),
-            "end_beats": data.get("selection_end_beats"),
+            "has_selection": has_selection,
+            "start_ticks": start,
+            "end_ticks": end,
+            "start_beats": data.get("selection_start_beats") if has_selection else None,
+            "end_beats": data.get("selection_end_beats") if has_selection else None,
         }
