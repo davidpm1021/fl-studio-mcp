@@ -73,6 +73,78 @@ the FLStudioMCP MIDI controller enabled (and, for `fl_get_time_signature`, the
 
 ---
 
+# Sprint 4 Smoke Tests
+
+Manual test cases for the 12 Sprint 4 tools (Tier 3 arrangement). Most use the
+MIDI bridge; `fl_get_piano_roll_markers` and `fl_get_timeline_selection` use the
+Piano Roll Scripting bridge (piano roll open + ComposeWithLLM armed). Both FL
+scripts changed this sprint — redeploy and reload (restart FL for the device
+script; re-run ComposeWithLLM once for the pyscript).
+
+---
+
+## Arrangement (MIDI bridge)
+
+### `fl_add_marker`
+
+- [ ] `fl_add_marker(1, "Intro")` → `{"success": true, "name": "Intro", "time_ticks": 0}`; an "Intro" marker appears at bar 1 in the playlist.
+- [ ] `fl_add_marker(5, "Chorus")` → marker at bar 5 (time_ticks = 4 * beats_per_bar * PPQ).
+- [ ] `fl_add_marker(0, "x")` → `{"success": false, "error_code": "INVALID_ARGS"}`.
+
+### `fl_jump_to_marker`
+
+- [ ] With a couple of markers placed, `fl_jump_to_marker(1)` then `fl_jump_to_marker(-1)` → playhead moves between markers.
+
+### `fl_get_selection`
+
+- [ ] Make a timeline selection in the playlist, `fl_get_selection()` → `has_selection: true` with start/end ticks, bars, and B:S:T hints.
+- [ ] With no selection, `has_selection` is false.
+
+### `fl_set_selection` (experimental)
+
+- [ ] `fl_set_selection(1, 5)` → returns start/end ticks; verify in FL whether the timeline selection updates (this uses the live-selection API; behavior to be confirmed).
+- [ ] `fl_set_selection(5, 2)` → `{"success": false, "error_code": "INVALID_ARGS"}` (end <= start).
+
+### `fl_get_piano_roll_markers` (Piano Roll Scripting)
+
+- [ ] With a piano roll open that has a time-signature or scale marker, `fl_get_piano_roll_markers()` → `{"success": true, "count": n, "markers": [{index, name, time_ticks, time, mode, ...}]}`; time-sig markers include tsnum/tsden, scale markers include scale_root/scale_helper.
+- [ ] Empty piano roll → `count: 0, markers: []`.
+
+### `fl_get_timeline_selection` (Piano Roll Scripting)
+
+- [ ] Select a time range in the piano roll, `fl_get_timeline_selection()` → `has_selection: true` with start/end ticks and beats.
+- [ ] No selection → `has_selection: false` (FL returns start -1).
+
+---
+
+## Playlist (MIDI bridge)
+
+### `fl_get_playlist_state`
+
+- [ ] `fl_get_playlist_state()` → `{"success": true, "track_count": n, "tracks": [{index, name, color, rgb, muted, solo, selected}, ...]}` with indices starting at 1.
+
+### `fl_set_playlist_track_name`
+
+- [ ] `fl_set_playlist_track_name(1, "Drums")` → `{"success": true, "index": 1, "name": "Drums"}`; track 1 renamed in FL.
+- [ ] `fl_set_playlist_track_name(0, "x")` → `INVALID_ARGS`.
+
+### `fl_set_playlist_track_color`
+
+- [ ] `fl_set_playlist_track_color(1, 255, 0, 0)` → track 1 turns red; returns color + rgb.
+- [ ] component > 255 → `INVALID_ARGS`.
+
+### `fl_mute_playlist_track` / `fl_solo_playlist_track`
+
+- [ ] `fl_mute_playlist_track(1, 1)` → muted true; `fl_mute_playlist_track(1, 0)` → muted false; `(1, -1)` toggles.
+- [ ] `fl_solo_playlist_track(1, 1)` → solo true; `(1, 0)` clears.
+
+### `fl_select_playlist_track`
+
+- [ ] `fl_select_playlist_track(2, exclusive=True)` → only track 2 selected (others deselected).
+- [ ] `fl_select_playlist_track(3)` (non-exclusive) → toggles track 3 selection.
+
+---
+
 # Sprint 3 Smoke Tests
 
 Manual test cases for the 7 Sprint 3 tools (Theory T1). The two `fl_get_*`

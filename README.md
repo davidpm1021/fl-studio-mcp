@@ -343,6 +343,37 @@ harmonic_minor, melodic_minor, dorian, phrygian, lydian, mixolydian, locrian`.
 Named progressions: `fifties, axis_of_awesome, andalusian, twelve_bar_blues,
 jazz_ii_v_i, pachelbel`.
 
+### Arrangement
+
+Markers and timeline selection. Marker add / selection tools use the MIDI
+bridge; the two piano-roll reads use the Piano Roll Scripting bridge (piano roll
+must be open). Bars are 1-indexed.
+
+| Tool | Description |
+|------|-------------|
+| `fl_add_marker` | Add a time marker at a bar position |
+| `fl_jump_to_marker` | Jump to a nearby marker (relative) |
+| `fl_get_selection` | Get the arrangement timeline selection |
+| `fl_set_selection` | Set the timeline selection to a bar range (experimental; uses live-selection API) |
+| `fl_get_piano_roll_markers` | List markers in the open piano roll (time sig, scale, etc.) |
+| `fl_get_timeline_selection` | Get the selected time range in the open piano roll |
+
+### Playlist
+
+Playlist track properties. Tracks are 1-indexed.
+
+| Tool | Description |
+|------|-------------|
+| `fl_get_playlist_state` | List playlist tracks (name, color, mute, solo, selection) |
+| `fl_set_playlist_track_name` | Rename a playlist track |
+| `fl_set_playlist_track_color` | Set a playlist track's color (RGB 0-255) |
+| `fl_mute_playlist_track` | Mute/unmute/toggle a track |
+| `fl_solo_playlist_track` | Solo/unsolo/toggle a track |
+| `fl_select_playlist_track` | Select a track (optionally exclusively) |
+
+> Placing/removing pattern clips in the playlist is not possible — FL Studio's
+> API exposes no clip add/remove function (see `KNOWN_GAPS.md`).
+
 ## Example Workflows
 
 ### Adjusting a Mix

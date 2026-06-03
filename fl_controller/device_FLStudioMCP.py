@@ -24,12 +24,14 @@ import sys
 from pathlib import Path
 
 # FL Studio API modules (available when running inside FL Studio)
+import arrangement
 import channels
 import device
 import general
 import midi
 import mixer
 import patterns
+import playlist
 import plugins
 import transport
 import ui
@@ -266,6 +268,30 @@ def dispatch_command(action: str, params: dict) -> dict:
         return handle_patterns_set_color(params)
     elif action == "patterns.getLength":
         return handle_patterns_get_length(params)
+
+    # Arrangement commands
+    elif action == "arrangement.addMarker":
+        return handle_arrangement_add_marker(params)
+    elif action == "arrangement.getSelection":
+        return handle_arrangement_get_selection(params)
+    elif action == "arrangement.setSelection":
+        return handle_arrangement_set_selection(params)
+    elif action == "arrangement.jumpToMarker":
+        return handle_arrangement_jump_to_marker(params)
+
+    # Playlist commands
+    elif action == "playlist.getState":
+        return handle_playlist_get_state()
+    elif action == "playlist.setTrackName":
+        return handle_playlist_set_track_name(params)
+    elif action == "playlist.setTrackColor":
+        return handle_playlist_set_track_color(params)
+    elif action == "playlist.muteTrack":
+        return handle_playlist_mute_track(params)
+    elif action == "playlist.soloTrack":
+        return handle_playlist_solo_track(params)
+    elif action == "playlist.selectTrack":
+        return handle_playlist_select_track(params)
 
     # UI / window commands
     elif action == "ui.focusWindow":
@@ -1140,6 +1166,146 @@ def handle_patterns_get_length(params: dict) -> dict:
     """Get the length (in beats) of the pattern at the given 1-based index."""
     idx = params.get("index", 1)
     return {"index": idx, "length_beats": patterns.getPatternLength(idx)}
+
+
+# =============================================================================
+# Arrangement Handlers
+# =============================================================================
+
+
+def handle_arrangement_add_marker(params: dict) -> dict:
+    """Add a time marker at a bar position (converted to absolute ticks)."""
+    position_bars = params.get("position_bars", 1)
+    name = params.get("name", "")
+    beats_per_bar = params.get("beats_per_bar", 4.0)
+    ppq = general.getRecPPQ()
+    time_ticks = int((position_bars - 1) * beats_per_bar * ppq)
+    arrangement.addAutoTimeMarker(time_ticks, name)
+    return {"name": name, "time_ticks": time_ticks}
+
+
+def handle_arrangement_get_selection(params: dict) -> dict:
+    """Read the arrangement timeline selection (in ticks) plus B:S:T hints."""
+    beats_per_bar = params.get("beats_per_bar", 4.0)
+    ppq = general.getRecPPQ()
+    start = arrangement.selectionStart()
+    end = arrangement.selectionEnd()
+    ticks_per_bar = beats_per_bar * ppq if ppq > 0 else 1
+
+    def to_bars(t):
+        return t / ticks_per_bar + 1 if ticks_per_bar else None
+
+    info = {
+        "has_selection": end > start,
+        "start_ticks": start,
+        "end_ticks": end,
+        "start_bars": to_bars(start),
+        "end_bars": to_bars(end),
+    }
+    # Song-mode B:S:T hint strings (mode 1 = song).
+    try:
+        info["start_hint"] = arrangement.currentTimeHint(1, start)
+        info["end_hint"] = arrangement.currentTimeHint(1, end)
+    except Exception:
+        info["start_hint"] = None
+        info["end_hint"] = None
+    return info
+
+
+def handle_arrangement_set_selection(params: dict) -> dict:
+    """Set the arrangement selection via the live-selection API."""
+    start_bars = params.get("start_bars", 1)
+    end_bars = params.get("end_bars", 2)
+    beats_per_bar = params.get("beats_per_bar", 4.0)
+    ppq = general.getRecPPQ()
+    start_ticks = int((start_bars - 1) * beats_per_bar * ppq)
+    end_ticks = int((end_bars - 1) * beats_per_bar * ppq)
+    # liveSelection sets the start point (stop=False) then the end (stop=True).
+    arrangement.liveSelection(start_ticks, False)
+    arrangement.liveSelection(end_ticks, True)
+    return {"start_ticks": start_ticks, "end_ticks": end_ticks}
+
+
+def handle_arrangement_jump_to_marker(params: dict) -> dict:
+    """Jump to a marker relative to the current one."""
+    delta = params.get("delta", 1)
+    select = bool(params.get("select", False))
+    arrangement.jumpToMarker(delta, select)
+    return {"delta": delta, "select": select}
+
+
+# =============================================================================
+# Playlist Handlers
+# =============================================================================
+
+
+def _playlist_track_summary(index: int) -> dict:
+    """Build a summary dict for the playlist track at `index` (1-based)."""
+    color = playlist.getTrackColor(index)
+    r = color & 0xFF
+    g = (color >> 8) & 0xFF
+    b = (color >> 16) & 0xFF
+    return {
+        "index": index,
+        "name": playlist.getTrackName(index),
+        "color": color,
+        "rgb": [r, g, b],
+        "muted": playlist.isTrackMuted(index),
+        "solo": playlist.isTrackSolo(index),
+        "selected": playlist.isTrackSelected(index),
+    }
+
+
+def handle_playlist_get_state() -> dict:
+    """List all playlist tracks (1-based) with their properties."""
+    count = playlist.trackCount()
+    tracks = [_playlist_track_summary(i) for i in range(1, count + 1)]
+    return {"track_count": count, "tracks": tracks}
+
+
+def handle_playlist_set_track_name(params: dict) -> dict:
+    """Rename a playlist track."""
+    idx = params.get("index", 1)
+    name = params.get("name", "")
+    playlist.setTrackName(idx, name)
+    return {"index": idx, "name": playlist.getTrackName(idx)}
+
+
+def handle_playlist_set_track_color(params: dict) -> dict:
+    """Set a playlist track's color."""
+    idx = params.get("index", 1)
+    r = params.get("red", 0)
+    g = params.get("green", 0)
+    b = params.get("blue", 0)
+    color = (b << 16) | (g << 8) | r
+    playlist.setTrackColor(idx, color)
+    return {"index": idx, "color": color, "rgb": [r, g, b]}
+
+
+def handle_playlist_mute_track(params: dict) -> dict:
+    """Mute/unmute/toggle a playlist track."""
+    idx = params.get("index", 1)
+    value = params.get("value", -1)
+    playlist.muteTrack(idx, value)
+    return {"index": idx, "muted": playlist.isTrackMuted(idx)}
+
+
+def handle_playlist_solo_track(params: dict) -> dict:
+    """Solo/unsolo/toggle a playlist track."""
+    idx = params.get("index", 1)
+    value = params.get("value", -1)
+    playlist.soloTrack(idx, value)
+    return {"index": idx, "solo": playlist.isTrackSolo(idx)}
+
+
+def handle_playlist_select_track(params: dict) -> dict:
+    """Select (optionally exclusively) a playlist track."""
+    idx = params.get("index", 1)
+    exclusive = bool(params.get("exclusive", False))
+    if exclusive:
+        playlist.deselectAll()
+    playlist.selectTrack(idx)
+    return {"index": idx, "selected": playlist.isTrackSelected(idx)}
 
 
 # =============================================================================

@@ -93,6 +93,8 @@ def process_mcp_request():
         notes_deleted = 0
         notes_transposed = 0
         time_signature = None
+        markers_data = None
+        timeline_selection = None
 
         for request in requests:
             action = request.get("action")
@@ -126,6 +128,10 @@ def process_mcp_request():
                     "numerator": flp.score.tsnum,
                     "denominator": flp.score.tsden,
                 }
+            elif action == "get_markers":
+                markers_data = collect_markers()
+            elif action == "get_timeline_selection":
+                timeline_selection = collect_timeline_selection()
 
         # Clear the request queue after processing
         with open(REQUEST_FILE, 'w') as f:
@@ -144,6 +150,13 @@ def process_mcp_request():
         if time_signature is not None:
             response["numerator"] = time_signature["numerator"]
             response["denominator"] = time_signature["denominator"]
+
+        if markers_data is not None:
+            response["markerCount"] = markers_data["markerCount"]
+            response["markers"] = markers_data["markers"]
+
+        if timeline_selection is not None:
+            response.update(timeline_selection)
 
         return response
 
@@ -269,6 +282,47 @@ def add_notes_to_piano_roll(request):
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+def collect_markers():
+    """Collect all piano roll markers with type-specific data.
+
+    Marker modes: 0 none, 6 pattern length, 8 time signature (tsnum/tsden),
+    9 start recording, 10 stop recording, 12 key/scale (scale_root/helper).
+    """
+    ppq = flp.score.PPQ
+    markers = []
+    for i in range(flp.score.markerCount):
+        m = flp.score.getMarker(i)
+        entry = {
+            "index": i,
+            "name": m.name,
+            "time_ticks": m.time,
+            "time": m.time / ppq if ppq > 0 else 0,
+            "mode": m.mode,
+        }
+        if m.mode == 8:  # time signature marker
+            entry["tsnum"] = m.tsnum
+            entry["tsden"] = m.tsden
+        elif m.mode == 12:  # key/scale marker
+            entry["scale_root"] = m.scale_root
+            entry["scale_helper"] = m.scale_helper
+        markers.append(entry)
+    return {"markerCount": flp.score.markerCount, "markers": markers}
+
+
+def collect_timeline_selection():
+    """Collect the piano roll timeline selection (start is -1 if none)."""
+    ppq = flp.score.PPQ
+    start, end = flp.score.getTimelineSelection()
+    has_selection = start != -1
+    return {
+        "has_selection": has_selection,
+        "selection_start_ticks": start,
+        "selection_end_ticks": end,
+        "selection_start_beats": (start / ppq if ppq > 0 and has_selection else None),
+        "selection_end_beats": (end / ppq if ppq > 0 and has_selection else None),
+    }
 
 
 def transpose_notes_in_piano_roll(request):
