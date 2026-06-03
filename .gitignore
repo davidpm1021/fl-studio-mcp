@@ -1,6 +1,12 @@
 .venv/
 .claude/
 uv.lock
+
+# Python bytecode / caches (anywhere in the tree)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 fl_controller/__pycache__/
 src/fl_studio_mcp/__pycache__/
 src/fl_studio_mcp/tools/__pycache__

@@ -73,6 +73,68 @@ the FLStudioMCP MIDI controller enabled (and, for `fl_get_time_signature`, the
 
 ---
 
+# Sprint 3 Smoke Tests
+
+Manual test cases for the 7 Sprint 3 tools (Theory T1). The two `fl_get_*`
+helpers are pure (no FL Studio needed). The `fl_place_*` and
+`fl_transpose_selection` tools require the **piano roll open** and the
+**ComposeWithLLM script armed once this session** (Piano Roll → Tools →
+Scripting → ComposeWithLLM). The pyscript changed this sprint (new `transpose`
+action), so re-run ComposeWithLLM from the menu once before testing.
+
+Pure-function logic is also covered by `tests/test_theory.py` (83 unit tests,
+run with `pytest`).
+
+---
+
+## Pure helpers (no FL Studio)
+
+### `fl_get_chord_notes`
+
+- [ ] `fl_get_chord_notes("C", "maj7")` → `{"success": true, "notes": [60,64,67,71], "note_names": ["C4","E4","G4","B4"]}`.
+- [ ] `fl_get_chord_notes("A", "min", voicing="first")` → first-inversion notes.
+- [ ] `fl_get_chord_notes("C", "bogus")` → `{"success": false, "error_code": "INVALID_ARGS"}`.
+
+### `fl_get_scale_notes`
+
+- [ ] `fl_get_scale_notes("A", "minor")` → `[69,71,72,74,76,77,79]`.
+- [ ] `fl_get_scale_notes("D", "dorian")` → `[62,64,65,67,69,71,72]`.
+
+---
+
+## Placement (Piano Roll Scripting; piano roll open + script armed)
+
+### `fl_place_chord`
+
+- [ ] With piano roll open at bar 1, `fl_place_chord("C", "maj7")` → a Cmaj7 chord (C4 E4 G4 B4) appears at bar 1, one bar long.
+- [ ] `fl_place_chord("G", "7", position_bars=2, voicing="drop2")` → G7 drop-2 voicing at bar 2.
+- [ ] `fl_place_chord("C", position_bars=0)` → `{"success": false, "error_code": "INVALID_ARGS"}` (1-indexed).
+
+### `fl_place_progression`
+
+- [ ] `fl_place_progression(["I","vi","IV","V"], key="C")` → four chords (C, Am, F, G), one per bar, starting at bar 1.
+- [ ] `fl_place_progression(name="jazz_ii_v_i", key="C")` → Dm7, G7, Cmaj7.
+- [ ] `fl_place_progression(["C","Am7","F","G"])` → chord-symbol progression places correctly.
+
+### `fl_place_scale`
+
+- [ ] `fl_place_scale("C", "major")` → ascending C major run (8 notes incl. top C5) starting at bar 1.
+- [ ] `fl_place_scale("C", "major", octaves=2, direction="updown")` → two-octave up-then-down run.
+
+### `fl_place_arpeggio`
+
+- [ ] `fl_place_arpeggio("A", "min7", pattern="up", octaves=2)` → ascending Am7 arpeggio over two octaves.
+- [ ] `fl_place_arpeggio("C", pattern="updown")` → up-then-down arpeggio.
+
+### `fl_transpose_selection`
+
+- [ ] Place a chord, select some notes in FL, `fl_transpose_selection(semitones=12)` → selected notes move up an octave (response notes_transposed = number selected, scope "selected").
+- [ ] With nothing selected, `fl_transpose_selection(interval="up_octave")` → all notes move up an octave (scope "all").
+- [ ] `fl_transpose_selection(interval="down_fifth")` → notes move down 7 semitones.
+- [ ] `fl_transpose_selection()` (no args) → `{"success": false, "error_code": "INVALID_ARGS"}`.
+
+---
+
 # Sprint 2 Smoke Tests
 
 Manual test cases for the 9 Sprint 2 tools (Tier 2 workflow primitives). All use

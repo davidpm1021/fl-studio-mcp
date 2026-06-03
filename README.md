@@ -319,6 +319,30 @@ operate on existing ones.
 | `fl_set_pattern_color` | Set a pattern's color (RGB 0-255) |
 | `fl_get_pattern_length` | Get a pattern's length in beats |
 
+### Music Theory (Layer C)
+
+Higher-level, music-aware tools. The two `fl_get_*` helpers are pure (no FL
+Studio needed); the `fl_place_*` and `fl_transpose_selection` tools write into
+the **open piano roll** via the Piano Roll Scripting bridge (piano roll must be
+open and the ComposeWithLLM script armed once per session). Bars are 1-indexed;
+`beats_per_bar` defaults to 4 (4/4).
+
+| Tool | Description |
+|------|-------------|
+| `fl_get_chord_notes` | Compute a chord's notes (pure; no placement) |
+| `fl_get_scale_notes` | Compute a scale's notes (pure; no placement) |
+| `fl_place_chord` | Place a chord (root, quality, voicing) in the piano roll |
+| `fl_place_progression` | Place a progression (roman numerals or chord symbols, or a named progression) |
+| `fl_place_scale` | Place a scale run (octaves, direction) |
+| `fl_place_arpeggio` | Place an arpeggio (up/down/updown) |
+| `fl_transpose_selection` | Transpose selected notes (or all) by semitones/interval |
+
+Supported chord qualities: `maj, min, dim, aug, maj7, min7, 7, dim7, m7b5,
+sus2, sus4, 6, min6, 9, maj9, min9, add9`. Scale modes: `major, minor,
+harmonic_minor, melodic_minor, dorian, phrygian, lydian, mixolydian, locrian`.
+Named progressions: `fifties, axis_of_awesome, andalusian, twelve_bar_blues,
+jazz_ii_v_i, pachelbel`.
+
 ## Example Workflows
 
 ### Adjusting a Mix
