@@ -73,6 +73,40 @@ the FLStudioMCP MIDI controller enabled (and, for `fl_get_time_signature`, the
 
 ---
 
+# Sprint 6 Smoke Tests
+
+Manual cases for the 17 Sprint 6 tools (Tier 4 + Theory T4 analysis). The
+device script changed (mixer extensions) → **restart FL**; the pyscript changed
+(snap-scale) → **re-arm ComposeWithLLM**. Pure logic covered by
+`tests/test_theory.py` (114 unit tests).
+
+---
+
+## Utilities (pure / project-info bridge)
+
+- [ ] `fl_note_name_to_midi("C4")` → 60; `("F#3")` → 54; `("C")` → 60 (default octave).
+- [ ] `fl_midi_to_note_name(60)` → "C4"; out-of-range → INVALID_ARGS.
+- [ ] `fl_bars_to_seconds(4)` at 120 BPM → 8.0s (uses project tempo if bpm omitted).
+- [ ] `fl_seconds_to_bars(8)` ≈ inverse.
+- [ ] `fl_get_ppq`, `fl_get_fl_version`, `fl_get_api_version` return sensible values.
+
+## Analysis (pure + piano roll)
+
+- [ ] `fl_analyze_chord([60,64,67])` → best = C maj; `([64,67,72])` → C, inversion 1.
+- [ ] `fl_detect_key([60,62,64,65,67,69,71])` → C major / A minor top the ranking.
+- [ ] `fl_analyze_piano_roll()` (piano roll open with notes) → note_count, pitch_range, detected_key, per-time chords.
+- [ ] `fl_get_snap_scale()` (set a snap-to-scale in the piano roll first) → root note + in-scale notes.
+
+## Mixer extensions (restart FL first)
+
+- [ ] `fl_get_selected_mixer_track()` → index + name of the selected track.
+- [ ] `fl_select_mixer_track(3)` → track 3 selected; re-query confirms.
+- [ ] `fl_get_mixer_eq(1)` → 3 bands, each with gain/gain_db/frequency/frequency_hz/bandwidth.
+- [ ] `fl_set_mixer_eq_band(1, 0, gain=0.7)` → band 0 gain updates; out-of-range → INVALID_ARGS; no params → INVALID_ARGS.
+- [ ] `fl_set_mixer_send(1, 0, 0.8)` then `fl_get_mixer_sends(1)` → shows route to track 0 at ~0.8.
+
+---
+
 # Sprint 5 Smoke Tests
 
 Manual test cases for the 6 Sprint 5 tools (Theory T2 composition). All placement

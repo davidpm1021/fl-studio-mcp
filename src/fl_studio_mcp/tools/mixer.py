@@ -256,3 +256,157 @@ def register_mixer_tools(mcp: FastMCP) -> None:
             return f"Error: {result['error']}"
 
         return f"Track {track} stereo separation set to {separation}"
+
+    # --- Tier 4 extensions: selection, EQ, sends -----------------------------
+
+    def _api_err(result: dict) -> dict:
+        return {
+            "success": False,
+            "error": result.get("error", "Unknown error"),
+            "error_code": "API_ERROR",
+        }
+
+    def _bad(msg: str) -> dict:
+        return {"success": False, "error": msg, "error_code": "INVALID_ARGS"}
+
+    @mcp.tool()
+    def fl_get_selected_mixer_track() -> dict:
+        """Get the currently selected mixer track (index and name)."""
+        conn = get_connection()
+        try:
+            result = conn.send_command("mixer.getSelected")
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
+        if not result.get("success", False):
+            return _api_err(result)
+        return {"success": True, "index": result.get("index"), "name": result.get("name")}
+
+    @mcp.tool()
+    def fl_select_mixer_track(track: int) -> dict:
+        """Exclusively select a mixer track by index.
+
+        Args:
+            track: Mixer track index (0 = master).
+        """
+        if track < 0:
+            return _bad("track must be >= 0")
+        conn = get_connection()
+        try:
+            result = conn.send_command("mixer.selectTrack", {"track": track})
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
+        if not result.get("success", False):
+            return _api_err(result)
+        return {"success": True, "index": result.get("index"), "name": result.get("name")}
+
+    @mcp.tool()
+    def fl_get_mixer_eq(track: int) -> dict:
+        """Get the built-in EQ settings for a mixer track.
+
+        Returns each band's gain (normalized and dB), frequency (normalized and
+        Hz), and bandwidth (normalized). FL Studio's built-in EQ has 3 bands.
+
+        Args:
+            track: Mixer track index.
+        """
+        if track < 0:
+            return _bad("track must be >= 0")
+        conn = get_connection()
+        try:
+            result = conn.send_command("mixer.getEq", {"track": track})
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
+        if not result.get("success", False):
+            return _api_err(result)
+        return {"success": True, "track": track, "bands": result.get("bands", [])}
+
+    @mcp.tool()
+    def fl_set_mixer_eq_band(
+        track: int,
+        band: int,
+        gain: float | None = None,
+        frequency: float | None = None,
+        bandwidth: float | None = None,
+    ) -> dict:
+        """Set one or more parameters of a mixer EQ band (normalized 0.0-1.0).
+
+        Only the provided parameters are changed. All values are normalized
+        0.0-1.0 (gain 0.5 = 0 dB).
+
+        Args:
+            track: Mixer track index.
+            band: EQ band index (0, 1, or 2).
+            gain: New gain, 0.0-1.0 (optional).
+            frequency: New frequency, 0.0-1.0 (optional).
+            bandwidth: New bandwidth, 0.0-1.0 (optional).
+        """
+        if track < 0 or band < 0:
+            return _bad("track and band must be >= 0")
+        for pname, val in (("gain", gain), ("frequency", frequency), ("bandwidth", bandwidth)):
+            if val is not None and not 0.0 <= val <= 1.0:
+                return _bad(f"{pname} must be between 0.0 and 1.0")
+        if gain is None and frequency is None and bandwidth is None:
+            return _bad("provide at least one of gain/frequency/bandwidth")
+        conn = get_connection()
+        try:
+            result = conn.send_command("mixer.setEqBand", {
+                "track": track, "band": band,
+                "gain": gain, "frequency": frequency, "bandwidth": bandwidth,
+            })
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
+        if not result.get("success", False):
+            return _api_err(result)
+        return {"success": True, "track": track, "band": band, "eq": result.get("eq")}
+
+    @mcp.tool()
+    def fl_get_mixer_sends(track: int) -> dict:
+        """List the mixer sends (routes) from a track and their levels.
+
+        Returns the destination tracks this track is routed to, with each send
+        level (0.0-1.0; 0.8 is unity).
+
+        Args:
+            track: Source mixer track index.
+        """
+        if track < 0:
+            return _bad("track must be >= 0")
+        conn = get_connection()
+        try:
+            result = conn.send_command("mixer.getSends", {"track": track})
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
+        if not result.get("success", False):
+            return _api_err(result)
+        return {"success": True, "track": track, "sends": result.get("sends", [])}
+
+    @mcp.tool()
+    def fl_set_mixer_send(from_track: int, to_track: int, level: float = 0.8) -> dict:
+        """Route one mixer track to another and set the send level.
+
+        Creates the route if needed, then sets its level.
+
+        Args:
+            from_track: Source mixer track index.
+            to_track: Destination mixer track index.
+            level: Send level, 0.0-1.0 (0.8 = unity gain, the default).
+        """
+        if from_track < 0 or to_track < 0:
+            return _bad("track indices must be >= 0")
+        if not 0.0 <= level <= 1.0:
+            return _bad("level must be between 0.0 and 1.0")
+        conn = get_connection()
+        try:
+            result = conn.send_command("mixer.setSend", {
+                "from_track": from_track, "to_track": to_track, "level": level,
+            })
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
+        if not result.get("success", False):
+            return _api_err(result)
+        return {
+            "success": True,
+            "from_track": from_track,
+            "to_track": to_track,
+            "level": result.get("level", level),
+        }

@@ -98,6 +98,7 @@ def process_mcp_request():
         time_signature = None
         markers_data = None
         timeline_selection = None
+        snap_scale = None
 
         for request in requests:
             action = request.get("action")
@@ -143,6 +144,8 @@ def process_mcp_request():
                 markers_data = collect_markers()
             elif action == "get_timeline_selection":
                 timeline_selection = collect_timeline_selection()
+            elif action == "get_snap_scale":
+                snap_scale = collect_snap_scale()
 
         # Clear the request queue after processing
         with open(REQUEST_FILE, 'w') as f:
@@ -170,6 +173,9 @@ def process_mcp_request():
 
         if timeline_selection is not None:
             response.update(timeline_selection)
+
+        if snap_scale is not None:
+            response.update(snap_scale)
 
         return response
 
@@ -322,6 +328,22 @@ def collect_markers():
             entry["scale_helper"] = m.scale_helper
         markers.append(entry)
     return {"markerCount": flp.score.markerCount, "markers": markers}
+
+
+def collect_snap_scale():
+    """Read the piano roll's snap-to-scale root and in-scale pitch classes.
+
+    snap_scale_helper is a 12-element C-aligned string where '0' means the note
+    IS in the scale and '1' means it is NOT (note: inverted vs marker helpers).
+    """
+    root = flp.score.snap_root_note
+    helper = flp.score.snap_scale_helper
+    in_scale = [i for i, v in enumerate(helper.split(",")) if v.strip() == "0"]
+    return {
+        "snap_root_note": root,
+        "snap_scale_helper": helper,
+        "in_scale_pitch_classes": in_scale,
+    }
 
 
 def collect_timeline_selection():

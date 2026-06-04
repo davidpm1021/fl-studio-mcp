@@ -11,6 +11,7 @@ from fl_studio_mcp.tools.plugins import register_plugin_tools
 from fl_studio_mcp.tools.theory import register_theory_tools
 from fl_studio_mcp.tools.transport import register_transport_tools
 from fl_studio_mcp.tools.ui import register_ui_tools
+from fl_studio_mcp.tools.utils import register_utils_tools
 
 __all__ = [
     "register_transport_tools",
@@ -24,4 +25,5 @@ __all__ = [
     "register_theory_tools",
     "register_arrangement_tools",
     "register_playlist_tools",
+    "register_utils_tools",
 ]

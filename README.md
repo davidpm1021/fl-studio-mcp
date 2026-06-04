@@ -230,6 +230,12 @@ fl-studio-mcp
 | `fl_set_track_name` | Rename track |
 | `fl_set_track_color` | Set track color |
 | `fl_set_stereo_separation` | Adjust stereo width |
+| `fl_get_selected_mixer_track` | Get the selected mixer track |
+| `fl_select_mixer_track` | Select a mixer track |
+| `fl_get_mixer_eq` | Read a track's built-in EQ (3 bands; gain/freq/bandwidth) |
+| `fl_set_mixer_eq_band` | Set an EQ band's gain/frequency/bandwidth (normalized) |
+| `fl_get_mixer_sends` | List a track's sends and levels |
+| `fl_set_mixer_send` | Route a track to another and set the send level |
 
 ### Channels
 
@@ -342,6 +348,10 @@ open and the ComposeWithLLM script armed once per session). Bars are 1-indexed;
 | `fl_generate_bassline` | Generate a bassline (root/octaves/fifths/walking) from a progression |
 | `fl_humanize_notes` | Add subtle timing/velocity variation to piano roll notes |
 | `fl_quantize_notes` | Snap note start times to a grid (with strength) |
+| `fl_analyze_chord` | Identify the chord name(s) from a set of MIDI notes (pure) |
+| `fl_detect_key` | Detect the most likely key/scale from MIDI notes (pure) |
+| `fl_analyze_piano_roll` | Analyze the open piano roll: key, chords, range, stats |
+| `fl_get_snap_scale` | Read the piano roll's snap-to-scale root + in-scale notes |
 
 Supported chord qualities: `maj, min, dim, aug, maj7, min7, 7, dim7, m7b5,
 sus2, sus4, 6, min6, 9, maj9, min9, add9`. Scale modes: `major, minor,
@@ -379,6 +389,21 @@ Playlist track properties. Tracks are 1-indexed.
 
 > Placing/removing pattern clips in the playlist is not possible — FL Studio's
 > API exposes no clip add/remove function (see `KNOWN_GAPS.md`).
+
+### Utilities
+
+Conversions and version/PPQ queries. Note/MIDI conversions are pure; bars↔seconds
+use the project tempo (or a supplied `bpm`).
+
+| Tool | Description |
+|------|-------------|
+| `fl_note_name_to_midi` | Note name (e.g. "C4", "F#3") → MIDI number |
+| `fl_midi_to_note_name` | MIDI number → note name |
+| `fl_bars_to_seconds` | Bars → seconds at the current/given tempo |
+| `fl_seconds_to_bars` | Seconds → bars at the current/given tempo |
+| `fl_get_ppq` | Project PPQ (ticks per quarter note) |
+| `fl_get_fl_version` | FL Studio version string |
+| `fl_get_api_version` | MIDI scripting API version |
 
 ## Example Workflows
 

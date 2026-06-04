@@ -9,13 +9,16 @@ from fl_studio_mcp.tools.theory import (
     apply_voicing,
     bars_to_beats,
     build_scale_sequence,
+    detect_key,
     generate_bassline,
     get_chord_notes,
     get_diatonic_chords,
     get_scale_notes,
     harmonize_melody,
+    identify_chord,
     interval_to_semitones,
     midi_to_note_name,
+    note_name_to_midi,
     note_to_midi,
     parse_chord_symbol,
     parse_pitch_class,
@@ -396,3 +399,88 @@ def test_bassline_octaves_and_fifths():
 def test_bassline_invalid_style():
     with pytest.raises(ValueError):
         generate_bassline([36], "bogus")
+
+
+# --- note_name_to_midi (full names) ------------------------------------------
+
+@pytest.mark.parametrize("name,midi", [
+    ("C4", 60), ("C#4", 61), ("Db3", 49), ("A4", 69), ("C-1", 0), ("G9", 127),
+    ("C", 60),  # no octave -> default 4
+])
+def test_note_name_to_midi(name, midi):
+    assert note_name_to_midi(name) == midi
+
+
+# --- identify_chord (T4) -----------------------------------------------------
+
+def test_identify_major_triad():
+    matches = identify_chord([60, 64, 67])
+    best = matches[0]
+    assert best["root"] == "C" and best["quality"] == "maj"
+    assert best["name"] == "C" and best["inversion"] == 0
+
+
+def test_identify_minor_seventh():
+    matches = identify_chord([69, 72, 76, 79])  # Am7
+    best = matches[0]
+    assert best["root"] == "A" and best["quality"] == "min7"
+    assert best["name"] == "Am7"
+
+
+def test_identify_inversion():
+    # E G C = C major, first inversion (E in bass)
+    matches = identify_chord([64, 67, 72])
+    cmaj = [m for m in matches if m["root"] == "C"][0]
+    assert cmaj["quality"] == "maj"
+    assert cmaj["bass"] == "E"
+    assert cmaj["inversion"] == 1
+
+
+def test_identify_dominant7():
+    matches = identify_chord([67, 71, 74, 77])  # G7
+    assert matches[0]["name"] == "G7"
+
+
+def test_identify_chord_ignores_octave_doubling():
+    # C E G with a doubled C an octave up still reads as C major.
+    matches = identify_chord([60, 64, 67, 72])
+    assert matches[0]["root"] == "C" and matches[0]["quality"] == "maj"
+
+
+def test_identify_chord_empty_raises():
+    with pytest.raises(ValueError):
+        identify_chord([])
+
+
+# --- detect_key (T4) ---------------------------------------------------------
+
+def test_detect_key_c_major():
+    # C major scale notes. C major and A minor share these notes, so both tie
+    # for the top score; just require C major to be among the best with no
+    # out-of-scale notes.
+    ranked = detect_key([60, 62, 64, 65, 67, 69, 71])
+    top_score = ranked[0]["score"]
+    tops = {(r["key"], r["mode"]) for r in ranked if r["score"] == top_score}
+    assert ("C", "major") in tops
+    cmaj = [r for r in ranked if r["key"] == "C" and r["mode"] == "major"][0]
+    assert cmaj["out_of_scale"] == 0
+
+
+def test_detect_key_a_minor_vs_c_major():
+    # A minor uses the same notes as C major; both should top the ranking.
+    ranked = detect_key([69, 71, 72, 74, 76, 77, 79])
+    tops = {(r["key"], r["mode"]) for r in ranked if r["score"] == ranked[0]["score"]}
+    assert ("C", "major") in tops
+    assert ("A", "minor") in tops
+
+
+def test_detect_key_penalizes_out_of_scale():
+    # A C major triad plus an F# (not in C major) should still rank a key that
+    # contains all four notes above plain C major.
+    ranked = detect_key([60, 64, 67, 66])
+    assert ranked[0]["out_of_scale"] <= 1
+
+
+def test_detect_key_empty_raises():
+    with pytest.raises(ValueError):
+        detect_key([])

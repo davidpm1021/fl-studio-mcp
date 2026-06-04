@@ -174,6 +174,18 @@ def dispatch_command(action: str, params: dict) -> dict:
         return handle_mixer_set_track_color(params)
     elif action == "mixer.setStereoSep":
         return handle_mixer_set_stereo_sep(params)
+    elif action == "mixer.getSelected":
+        return handle_mixer_get_selected()
+    elif action == "mixer.selectTrack":
+        return handle_mixer_select_track(params)
+    elif action == "mixer.getEq":
+        return handle_mixer_get_eq(params)
+    elif action == "mixer.setEqBand":
+        return handle_mixer_set_eq_band(params)
+    elif action == "mixer.getSends":
+        return handle_mixer_get_sends(params)
+    elif action == "mixer.setSend":
+        return handle_mixer_set_send(params)
 
     # Channel commands
     elif action == "channels.getCount":
@@ -546,6 +558,89 @@ def handle_mixer_set_stereo_sep(params: dict) -> dict:
     separation = params.get("separation", 0.0)
     mixer.setTrackStereoSep(track, separation)
     return {"separation": separation}
+
+
+def handle_mixer_get_selected() -> dict:
+    """Get the currently selected mixer track index and name."""
+    idx = mixer.trackNumber()
+    return {"index": idx, "name": mixer.getTrackName(idx)}
+
+
+def handle_mixer_select_track(params: dict) -> dict:
+    """Exclusively select a mixer track."""
+    track = params.get("track", 0)
+    mixer.setActiveTrack(track)
+    idx = mixer.trackNumber()
+    return {"index": idx, "name": mixer.getTrackName(idx)}
+
+
+def handle_mixer_get_eq(params: dict) -> dict:
+    """Read all built-in EQ bands for a mixer track."""
+    track = params.get("track", 0)
+    bands = []
+    for b in range(mixer.getEqBandCount()):
+        bands.append({
+            "band": b,
+            "gain": mixer.getEqGain(track, b, 0),
+            "gain_db": mixer.getEqGain(track, b, 1),
+            "frequency": mixer.getEqFrequency(track, b, 0),
+            "frequency_hz": mixer.getEqFrequency(track, b, 1),
+            "bandwidth": mixer.getEqBandwidth(track, b),
+        })
+    return {"track": track, "bands": bands}
+
+
+def handle_mixer_set_eq_band(params: dict) -> dict:
+    """Set gain/frequency/bandwidth of one EQ band (only provided values)."""
+    track = params.get("track", 0)
+    band = params.get("band", 0)
+    gain = params.get("gain")
+    freq = params.get("frequency")
+    bw = params.get("bandwidth")
+    if gain is not None:
+        mixer.setEqGain(track, band, gain)
+    if freq is not None:
+        mixer.setEqFrequency(track, band, freq)
+    if bw is not None:
+        mixer.setEqBandwidth(track, band, bw)
+    eq = {
+        "band": band,
+        "gain": mixer.getEqGain(track, band, 0),
+        "frequency": mixer.getEqFrequency(track, band, 0),
+        "bandwidth": mixer.getEqBandwidth(track, band),
+    }
+    return {"track": track, "band": band, "eq": eq}
+
+
+def handle_mixer_get_sends(params: dict) -> dict:
+    """List active sends from a track with their levels."""
+    track = params.get("track", 0)
+    sends = []
+    for dest in range(mixer.trackCount()):
+        if dest == track:
+            continue
+        if mixer.getRouteSendActive(track, dest):
+            sends.append({
+                "to_track": dest,
+                "name": mixer.getTrackName(dest),
+                "level": mixer.getRouteToLevel(track, dest),
+            })
+    return {"track": track, "sends": sends}
+
+
+def handle_mixer_set_send(params: dict) -> dict:
+    """Route from->to and set the send level (creates the route if needed)."""
+    src = params.get("from_track", 0)
+    dst = params.get("to_track", 0)
+    level = params.get("level", 0.8)
+    mixer.setRouteTo(src, dst, True)
+    mixer.setRouteToLevel(src, dst, level)
+    mixer.afterRoutingChanged()
+    return {
+        "from_track": src,
+        "to_track": dst,
+        "level": mixer.getRouteToLevel(src, dst),
+    }
 
 
 # =============================================================================
