@@ -352,6 +352,12 @@ open and the ComposeWithLLM script armed once per session). Bars are 1-indexed;
 | `fl_detect_key` | Detect the most likely key/scale from MIDI notes (pure) |
 | `fl_analyze_piano_roll` | Analyze the open piano roll: key, chords, range, stats |
 | `fl_get_snap_scale` | Read the piano roll's snap-to-scale root + in-scale notes |
+| `fl_get_jazz_voicing` | Compute a jazz voicing (shell/rootless/quartal) of a chord (pure) |
+| `fl_place_jazz_chord` | Place a chord using a jazz voicing |
+| `fl_place_ii_v_i` | Place a ii-V-I jazz cadence in a key |
+| `fl_reharmonize` | Reharmonize a progression (tritone-sub / relative / secondary dominant) |
+| `fl_extend_chord` | Add tensions (9/11/13, b9/#9/#11/b13) to a chord (pure) |
+| `fl_get_chord_scale` | Suggest scale(s) to improvise over a chord (pure) |
 
 Supported chord qualities: `maj, min, dim, aug, maj7, min7, 7, dim7, m7b5,
 sus2, sus4, 6, min6, 9, maj9, min9, add9`. Scale modes: `major, minor,
