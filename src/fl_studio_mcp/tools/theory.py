@@ -17,6 +17,7 @@ Conventions:
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -682,6 +683,106 @@ def generate_bassline(
 
 
 # =============================================================================
+# Analysis helpers (Layer C, T4) -- pure, unit tested
+# =============================================================================
+
+# Display suffix for chord names (e.g. C + "m7" -> "Cm7").
+_QUALITY_LABEL = {
+    "maj": "", "min": "m", "dim": "dim", "aug": "aug",
+    "maj7": "maj7", "min7": "m7", "7": "7", "dim7": "dim7", "m7b5": "m7b5",
+    "sus2": "sus2", "sus4": "sus4", "6": "6", "min6": "m6",
+    "9": "9", "maj9": "maj9", "min9": "m9", "add9": "add9",
+}
+
+# Pitch-class interval sets (within an octave) for each quality, for matching.
+_INTERVALS_BY_QUALITY = {
+    q: tuple(sorted(set(i % 12 for i in ivs)))
+    for q, ivs in CHORD_QUALITIES.items()
+}
+
+
+def note_name_to_midi(name: str, default_octave: int = 4) -> int:
+    """Parse a full note name like "C4", "C#4", "Db3", "C-1" into a MIDI number.
+
+    If no octave digits are present (e.g. "C#"), ``default_octave`` is used.
+    """
+    if not name:
+        raise ValueError("empty note name")
+    i = len(name)
+    while i > 0 and (name[i - 1].isdigit() or name[i - 1] == "-"):
+        i -= 1
+    pitch = name[:i]
+    octave_part = name[i:]
+    octave = int(octave_part) if octave_part not in ("", "-") else default_octave
+    return note_to_midi(pitch, octave)
+
+
+def identify_chord(notes: list[int]) -> list[dict]:
+    """Identify the chord(s) formed by a set of MIDI notes.
+
+    Returns a list of matches (a symmetric chord like a diminished seventh has
+    several enharmonic spellings). Each match has root, quality, display name,
+    bass note, and inversion (0 = root position). Root-position matches are
+    listed first.
+    """
+    if not notes:
+        raise ValueError("no notes provided")
+    ordered = sorted(notes)
+    bass_pc = ordered[0] % 12
+    pcs = sorted(set(n % 12 for n in ordered))
+    pc_set = tuple(pcs)
+
+    matches = []
+    for root_pc in pcs:
+        intervals = tuple(sorted((pc - root_pc) % 12 for pc in pc_set))
+        for quality, qset in _INTERVALS_BY_QUALITY.items():
+            if intervals == qset:
+                qmod = [i % 12 for i in CHORD_QUALITIES[quality]]
+                rel_bass = (bass_pc - root_pc) % 12
+                inversion = qmod.index(rel_bass) if rel_bass in qmod else 0
+                root_name = _NOTE_NAMES_SHARP[root_pc]
+                matches.append({
+                    "root": root_name,
+                    "quality": quality,
+                    "name": root_name + _QUALITY_LABEL.get(quality, quality),
+                    "bass": _NOTE_NAMES_SHARP[bass_pc],
+                    "inversion": inversion,
+                })
+    matches.sort(key=lambda m: (m["inversion"], m["root"]))
+    return matches
+
+
+def detect_key(
+    notes: list[int],
+    modes: tuple[str, ...] = ("major", "minor"),
+) -> list[dict]:
+    """Rank candidate keys/modes for a set of MIDI notes.
+
+    Scores every tonic x mode by how many of the notes' pitch classes fall in
+    the scale minus those that don't. Returns candidates sorted best-first.
+    """
+    if not notes:
+        raise ValueError("no notes provided")
+    pcs = set(n % 12 for n in notes)
+    results = []
+    for tonic_pc in range(12):
+        for mode in modes:
+            canonical = _canonical_mode(mode)
+            scale = set((tonic_pc + iv) % 12 for iv in SCALE_MODES[canonical])
+            in_scale = len(pcs & scale)
+            out_of_scale = len(pcs - scale)
+            results.append({
+                "key": _NOTE_NAMES_SHARP[tonic_pc],
+                "mode": canonical,
+                "in_scale": in_scale,
+                "out_of_scale": out_of_scale,
+                "score": in_scale - out_of_scale,
+            })
+    results.sort(key=lambda r: (-r["score"], r["out_of_scale"], r["key"]))
+    return results
+
+
+# =============================================================================
 # MCP tool registration
 # =============================================================================
 
@@ -689,9 +790,13 @@ def generate_bassline(
 def register_theory_tools(mcp: FastMCP) -> None:
     """Register music theory (Layer C) tools with the MCP server."""
     from fl_studio_mcp.tools.piano_roll import (
+        _get_response_file,
         _get_trigger_info,
+        _read_state,
         _write_request,
     )
+    from fl_studio_mcp.utils.connection import get_connection
+    from fl_studio_mcp.utils.fl_trigger import get_trigger, trigger_fl_studio
 
     def _names(notes: list[int]) -> list[str]:
         return [midi_to_note_name(n) for n in notes]
@@ -1419,4 +1524,182 @@ def register_theory_tools(mcp: FastMCP) -> None:
             "grid": grid,
             "strength": strength,
             "message": f"Quantized notes to a {grid}-beat grid." + trigger_info,
+        }
+
+    # --- T4 analysis tools ---------------------------------------------------
+
+    @mcp.tool()
+    def fl_analyze_chord(notes: list[int]) -> dict:
+        """Identify the chord formed by a set of MIDI notes (pure helper).
+
+        Returns all matching chord names (a symmetric chord can spell several
+        ways), each with root, quality, bass note, and inversion. Root-position
+        matches are listed first.
+
+        Args:
+            notes: MIDI note numbers (e.g. [60, 64, 67] for C major).
+        """
+        try:
+            matches = identify_chord(notes)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+        return {
+            "success": True,
+            "matches": matches,
+            "best": matches[0] if matches else None,
+        }
+
+    @mcp.tool()
+    def fl_detect_key(notes: list[int], top: int = 3) -> dict:
+        """Detect the most likely key/scale for a set of MIDI notes (pure).
+
+        Scores every tonic against major and minor scales and returns the
+        best-fitting candidates.
+
+        Args:
+            notes: MIDI note numbers.
+            top: How many ranked candidates to return.
+        """
+        try:
+            ranked = detect_key(notes)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+        top = max(1, top)
+        return {
+            "success": True,
+            "best": ranked[0],
+            "candidates": ranked[:top],
+        }
+
+    @mcp.tool()
+    def fl_analyze_piano_roll() -> dict:
+        """Analyze the notes currently in the open piano roll.
+
+        Triggers FL Studio to export the piano roll state, then reports the note
+        count, pitch range, detected key, and the chord identified at each
+        distinct start time. Requires the piano roll open with ComposeWithLLM
+        armed.
+        """
+        trigger = get_trigger()
+        if not trigger.is_supported:
+            return {
+                "success": False,
+                "error": f"Auto-trigger not supported on {trigger.platform}.",
+                "error_code": "NOT_SUPPORTED",
+            }
+        try:
+            get_connection().send_command(
+                "ui.focusWindow", {"window": "piano_roll"}, timeout=2.0
+            )
+        except Exception:
+            pass
+        trigger_fl_studio()  # exports current state
+
+        state = _read_state()
+        if not state or "notes" not in state:
+            return {
+                "success": False,
+                "error": "No piano roll state. Make sure the piano roll is open "
+                "and ComposeWithLLM has run at least once.",
+                "error_code": "FL_PIANO_ROLL_CLOSED",
+            }
+        notes = state["notes"]
+        if not notes:
+            return {
+                "success": True,
+                "note_count": 0,
+                "message": "Piano roll is empty.",
+            }
+
+        midis = [n["midi"] for n in notes if "midi" in n]
+        ranked = detect_key(midis)
+        lo, hi = min(midis), max(midis)
+
+        # Group notes by start time and identify the chord at each.
+        by_time: dict = {}
+        for n in notes:
+            by_time.setdefault(round(n.get("time", 0), 4), []).append(n["midi"])
+        chords = []
+        for t in sorted(by_time):
+            group = by_time[t]
+            matches = identify_chord(group) if len(group) >= 2 else []
+            chords.append({
+                "time": t,
+                "midi": sorted(group),
+                "chord": matches[0]["name"] if matches else None,
+            })
+
+        return {
+            "success": True,
+            "note_count": len(notes),
+            "pitch_range": {
+                "low": midi_to_note_name(lo),
+                "high": midi_to_note_name(hi),
+                "low_midi": lo,
+                "high_midi": hi,
+            },
+            "detected_key": ranked[0],
+            "key_candidates": ranked[:3],
+            "chords": chords,
+        }
+
+    @mcp.tool()
+    def fl_get_snap_scale() -> dict:
+        """Read the piano roll's snap-to-scale setting.
+
+        Uses the Piano Roll Scripting context (piano roll must be open). Returns
+        the snap root note and the list of in-scale pitch classes / note names.
+        Note: this reflects the snap-to-scale setting, not key/scale markers.
+        """
+        if not get_trigger().is_supported:
+            return {
+                "success": False,
+                "error": "Auto-trigger not supported on this platform.",
+                "error_code": "NOT_SUPPORTED",
+            }
+        try:
+            get_connection().send_command(
+                "ui.focusWindow", {"window": "piano_roll"}, timeout=2.0
+            )
+        except Exception:
+            pass
+        response_file = _get_response_file()
+        if response_file.exists():
+            try:
+                response_file.unlink()
+            except OSError:
+                pass
+        _write_request({"action": "get_snap_scale"})
+        trigger_fl_studio()
+
+        if not response_file.exists():
+            return {
+                "success": False,
+                "error": "No response from the piano roll script. Make sure the "
+                "piano roll is open.",
+                "error_code": "FL_PIANO_ROLL_CLOSED",
+            }
+        try:
+            with open(response_file) as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            return {
+                "success": False,
+                "error": f"Could not read piano roll response: {e}",
+                "error_code": "API_ERROR",
+            }
+        if "snap_root_note" not in data:
+            return {
+                "success": False,
+                "error": "No snap-scale data in response.",
+                "error_code": "FL_PIANO_ROLL_CLOSED",
+            }
+        root = data["snap_root_note"]
+        in_scale_pcs = data.get("in_scale_pitch_classes", [])
+        return {
+            "success": True,
+            "root_note": _NOTE_NAMES_SHARP[root % 12] if root is not None else None,
+            "root_pitch_class": root,
+            "in_scale_pitch_classes": in_scale_pcs,
+            "in_scale_notes": [_NOTE_NAMES_SHARP[pc] for pc in in_scale_pcs],
         }
