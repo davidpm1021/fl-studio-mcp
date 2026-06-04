@@ -25,9 +25,13 @@ from pathlib import Path
 
 # FL Studio API modules (available when running inside FL Studio)
 import channels
+import device
+import general
+import midi
 import mixer
 import plugins
 import transport
+import ui
 
 
 def _get_script_dir() -> Path:
@@ -227,6 +231,26 @@ def dispatch_command(action: str, params: dict) -> dict:
         return handle_plugins_prev_preset(params)
     elif action == "plugins.getColor":
         return handle_plugins_get_color(params)
+
+    # General commands
+    elif action == "general.setTempo":
+        return handle_general_set_tempo(params)
+    elif action == "general.getTempo":
+        return handle_general_get_tempo()
+    elif action == "general.undo":
+        return handle_general_undo()
+    elif action == "general.redo":
+        return handle_general_redo()
+    elif action == "general.save":
+        return handle_general_save()
+    elif action == "general.getProjectInfo":
+        return handle_general_get_project_info()
+
+    # UI / window commands
+    elif action == "ui.focusWindow":
+        return handle_ui_focus_window(params)
+    elif action == "ui.getWindowState":
+        return handle_ui_get_window_state()
 
     else:
         return {"error": f"Unknown action: {action}"}
@@ -868,3 +892,140 @@ def handle_plugins_get_color(params: dict) -> dict:
         color = plugins.getColor(index, -1, use_global)
 
     return {"color": hex(color)}
+
+
+# =============================================================================
+# General Handlers
+# =============================================================================
+
+
+def handle_general_set_tempo(params: dict) -> dict:
+    """Set project tempo (BPM) via the REC_Tempo event.
+
+    FL Studio stores tempo as BPM * 1000 internally.
+    """
+    bpm = params.get("bpm", 120.0)
+    general.processRECEvent(
+        midi.REC_Tempo,
+        int(bpm * 1000),
+        midi.REC_Control | midi.REC_UpdateControl,
+    )
+    return {"new_tempo": bpm}
+
+
+def handle_general_get_tempo() -> dict:
+    """Read project tempo by parsing the formatted REC_Tempo string."""
+    tempo_str = device.getLinkedValueString(midi.REC_Tempo)
+    # tempo_str looks like "124.0 BPM" or "124 BPM"
+    bpm = float(tempo_str.split()[0])
+    return {"tempo": bpm}
+
+
+def handle_general_undo() -> dict:
+    """Undo the last action (undoUp moves backward through history)."""
+    general.undoUp()
+    return {"position_hint": general.getUndoLevelHint()}
+
+
+def handle_general_redo() -> dict:
+    """Redo (undoDown moves forward through history)."""
+    general.undoDown()
+    return {"position_hint": general.getUndoLevelHint()}
+
+
+def handle_general_save() -> dict:
+    """Save the project to its current file."""
+    transport.globalTransport(midi.FPT_Save, 1)
+    return {}
+
+
+def handle_general_get_project_info() -> dict:
+    """Collect composite project info from multiple API sources."""
+    info = {}
+
+    # Tempo (parse formatted string).
+    try:
+        tempo_str = device.getLinkedValueString(midi.REC_Tempo)
+        info["tempo"] = float(tempo_str.split()[0])
+    except Exception:
+        info["tempo"] = None
+
+    # Song length in bars. SONGLENGTH_BARS (3) returns the bars component of the
+    # song length in B:S:T format. REC_SongLength linked values come back empty,
+    # so use transport.getSongLength instead.
+    try:
+        info["song_length_bars"] = transport.getSongLength(3)
+    except Exception:
+        info["song_length_bars"] = None
+
+    # FL Studio version as "major.minor.release".
+    try:
+        info["fl_studio_version"] = "%d.%d.%d" % (
+            ui.getVersion(0),
+            ui.getVersion(1),
+            ui.getVersion(2),
+        )
+    except Exception:
+        info["fl_studio_version"] = None
+
+    try:
+        info["api_version"] = general.getVersion()
+    except Exception:
+        info["api_version"] = None
+
+    try:
+        info["modified"] = general.getChangedFlag() != 0
+    except Exception:
+        info["modified"] = None
+
+    try:
+        info["ppq"] = general.getRecPPQ()
+    except Exception:
+        info["ppq"] = None
+
+    return info
+
+
+# =============================================================================
+# UI / Window Handlers
+# =============================================================================
+
+
+# Window name -> FL Studio window index.
+_WINDOW_MAP = {
+    "mixer": midi.widMixer,
+    "channel_rack": midi.widChannelRack,
+    "playlist": midi.widPlaylist,
+    "piano_roll": midi.widPianoRoll,
+    "browser": midi.widBrowser,
+}
+
+
+def handle_ui_focus_window(params: dict) -> dict:
+    """Focus an FL Studio window by name."""
+    window = params.get("window", "")
+    if window not in _WINDOW_MAP:
+        return {"error": "Unknown window: %s" % window}
+    idx = _WINDOW_MAP[window]
+    # showWindow brings the window to the front and reliably moves focus among
+    # docked windows; setFocused alone often does not take effect. Call both.
+    ui.showWindow(idx)
+    ui.setFocused(idx)
+    return {"focused_window": window, "focused": ui.getFocused(idx)}
+
+
+def handle_ui_get_window_state() -> dict:
+    """Report which windows are focused and visible."""
+    focused = None
+    visible = []
+    for name, idx in _WINDOW_MAP.items():
+        if ui.getFocused(idx):
+            focused = name
+        if ui.getVisible(idx):
+            visible.append(name)
+
+    return {
+        "focused": focused,
+        "visible": visible,
+        "focused_caption": ui.getFocusedFormCaption(),
+    }

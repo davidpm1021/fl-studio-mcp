@@ -88,10 +88,75 @@ class FLStudioTrigger:
         except Exception:
             return False
 
+    def _focus_fl_studio_windows(self) -> bool:
+        """Bring the FL Studio window to the foreground on Windows.
+
+        The keystroke is delivered to whichever window is active, so FL Studio
+        must be foregrounded first (the macOS path does this via ``activate``).
+        Uses the standard AttachThreadInput workaround for the Win32
+        SetForegroundWindow focus-stealing restriction. No extra dependencies.
+        """
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+
+            found = []
+
+            EnumWindowsProc = ctypes.WINFUNCTYPE(
+                ctypes.c_bool, wintypes.HWND, wintypes.LPARAM
+            )
+
+            def _enum(hwnd, _lparam):
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length == 0:
+                    return True
+                buf = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buf, length + 1)
+                if buf.value.startswith("FL Studio"):
+                    found.append(hwnd)
+                    return False
+                return True
+
+            user32.EnumWindows(EnumWindowsProc(_enum), 0)
+            if not found:
+                return False
+
+            hwnd = found[0]
+
+            # Restore if minimized (SW_RESTORE = 9).
+            user32.ShowWindow(hwnd, 9)
+
+            # Attach to the foreground thread's input queue so
+            # SetForegroundWindow is allowed to switch focus.
+            fg = user32.GetForegroundWindow()
+            target_tid = user32.GetWindowThreadProcessId(hwnd, None)
+            fg_tid = user32.GetWindowThreadProcessId(fg, None)
+            cur_tid = kernel32.GetCurrentThreadId()
+
+            user32.AttachThreadInput(cur_tid, target_tid, True)
+            user32.AttachThreadInput(fg_tid, target_tid, True)
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            user32.AttachThreadInput(fg_tid, target_tid, False)
+            user32.AttachThreadInput(cur_tid, target_tid, False)
+
+            return True
+        except Exception:
+            return False
+
     def _trigger_windows(self) -> bool:
         """Trigger FL Studio on Windows using pynput."""
         try:
             from pynput.keyboard import Controller, Key
+
+            # Foreground FL Studio so the keystroke lands on it.
+            self._focus_fl_studio_windows()
+            time.sleep(0.3)
 
             keyboard = Controller()
 

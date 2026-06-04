@@ -22,10 +22,12 @@ from fastmcp import FastMCP
 
 from fl_studio_mcp.tools import (
     register_channel_tools,
+    register_general_tools,
     register_mixer_tools,
     register_piano_roll_tools,
     register_plugin_tools,
     register_transport_tools,
+    register_ui_tools,
 )
 from fl_studio_mcp.utils.connection import get_connection, reset_connection
 
@@ -133,6 +135,8 @@ register_mixer_tools(mcp)
 register_channel_tools(mcp)
 register_plugin_tools(mcp)
 register_piano_roll_tools(mcp)
+register_general_tools(mcp)
+register_ui_tools(mcp)
 
 
 def main():
