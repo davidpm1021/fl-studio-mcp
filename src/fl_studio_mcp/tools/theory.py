@@ -783,6 +783,192 @@ def detect_key(
 
 
 # =============================================================================
+# Jazz helpers (Layer C, T3) -- pure, unit tested
+# =============================================================================
+
+# Chord tones (third, fifth, seventh, ninth) in semitones from the root, used
+# for building jazz voicings. Triads are mapped to their seventh-chord context.
+_JAZZ_TONES = {
+    "maj7": (4, 7, 11, 14), "maj": (4, 7, 11, 14), "6": (4, 7, 9, 14),
+    "min7": (3, 7, 10, 14), "min": (3, 7, 10, 14), "min6": (3, 7, 9, 14),
+    "7": (4, 7, 10, 14), "9": (4, 7, 10, 14),
+    "m7b5": (3, 6, 10, 14), "dim7": (3, 6, 9, 14), "dim": (3, 6, 9, 14),
+    "aug": (4, 8, 11, 14), "sus4": (5, 7, 10, 14), "sus2": (2, 7, 10, 14),
+}
+
+# Tension intervals (semitones from the root) for chord extensions.
+_TENSIONS = {
+    9: 14, 11: 17, 13: 21,
+    "9": 14, "11": 17, "13": 21,
+    "b9": 13, "#9": 15, "#11": 18, "b13": 20,
+}
+
+# Scale interval sets used for chord-scale recommendations.
+_JAZZ_SCALE_INTERVALS = {
+    "major": [0, 2, 4, 5, 7, 9, 11],
+    "lydian": [0, 2, 4, 6, 7, 9, 11],
+    "dorian": [0, 2, 3, 5, 7, 9, 10],
+    "minor": [0, 2, 3, 5, 7, 8, 10],
+    "mixolydian": [0, 2, 4, 5, 7, 9, 10],
+    "locrian": [0, 1, 3, 5, 6, 8, 10],
+    "lydian_dominant": [0, 2, 4, 6, 7, 9, 10],
+    "altered": [0, 1, 3, 4, 6, 8, 10],
+    "half_whole_diminished": [0, 1, 3, 4, 6, 7, 9, 10],
+    "whole_half_diminished": [0, 2, 3, 5, 6, 8, 9, 11],
+    "melodic_minor": [0, 2, 3, 5, 7, 9, 11],
+    "harmonic_minor": [0, 2, 3, 5, 7, 8, 11],
+    "whole_tone": [0, 2, 4, 6, 8, 10],
+}
+
+# Recommended scale(s) to improvise over each chord quality.
+_CHORD_SCALE_REC = {
+    "maj7": ["major", "lydian"], "maj": ["major", "lydian"], "6": ["major"],
+    "min7": ["dorian", "minor"], "min": ["dorian", "minor"],
+    "min6": ["melodic_minor", "dorian"],
+    "7": ["mixolydian", "lydian_dominant", "altered"], "9": ["mixolydian"],
+    "m7b5": ["locrian", "half_whole_diminished"],
+    "dim7": ["whole_half_diminished"], "dim": ["whole_half_diminished"],
+    "aug": ["whole_tone"], "sus4": ["mixolydian"], "sus2": ["mixolydian"],
+}
+
+
+def jazz_voicing(
+    root: str,
+    quality: str = "maj7",
+    voicing: str = "rootless",
+    octave: int = 4,
+) -> list[int]:
+    """Build a jazz voicing of a chord as MIDI notes.
+
+    Voicings: "shell" (root, 3rd, 7th), "rootless"/"rootless_a"
+    (3-5-7-9), "rootless_b" (7-9-3-5), "quartal" (stacked fourths from the root).
+    """
+    root_midi = note_to_midi(root, octave)
+    v = (voicing or "rootless").strip().lower()
+    if v == "quartal":
+        notes = [root_midi, root_midi + 5, root_midi + 10, root_midi + 15]
+        return [n for n in notes if 0 <= n <= 127]
+
+    canonical = _canonical_quality(quality)
+    tones = _JAZZ_TONES.get(canonical)
+    if tones is None:
+        raise ValueError(f"no jazz voicing defined for quality {quality!r}")
+    t3, t5, t7, t9 = tones
+
+    if v == "shell":
+        notes = [root_midi, root_midi + t3, root_midi + t7]
+    elif v in ("rootless", "rootless_a"):
+        notes = [root_midi + t3, root_midi + t5, root_midi + t7, root_midi + t9]
+    elif v == "rootless_b":
+        notes = [
+            root_midi + t7, root_midi + t9,
+            root_midi + t3 + 12, root_midi + t5 + 12,
+        ]
+    else:
+        raise ValueError(
+            f"unknown voicing: {voicing!r} (shell/rootless/rootless_b/quartal)"
+        )
+    return sorted(n for n in notes if 0 <= n <= 127)
+
+
+def extend_chord(
+    root: str,
+    quality: str = "maj7",
+    tensions: list | None = None,
+    octave: int = 4,
+) -> list[int]:
+    """Return a chord's notes plus the requested tensions (9/11/13, b9/#9/#11...)."""
+    base = get_chord_notes(root, quality, octave)
+    root_midi = note_to_midi(root, octave)
+    extra = []
+    for t in (tensions or []):
+        key = t if t in _TENSIONS else str(t)
+        if key not in _TENSIONS:
+            raise ValueError(
+                f"unknown tension: {t!r}. Known: {sorted(str(k) for k in _TENSIONS)}"
+            )
+        extra.append(root_midi + _TENSIONS[key])
+    return sorted(set(base + extra))
+
+
+def get_chord_scale(root: str, quality: str = "maj7", octave: int = 4) -> list[dict]:
+    """Recommend scale(s) to improvise over a chord, with their notes."""
+    canonical = _canonical_quality(quality)
+    recs = _CHORD_SCALE_REC.get(canonical, ["major"])
+    root_midi = note_to_midi(root, octave)
+    out = []
+    for name in recs:
+        intervals = _JAZZ_SCALE_INTERVALS[name]
+        notes = [root_midi + iv for iv in intervals]
+        out.append({
+            "scale": name,
+            "notes": notes,
+            "note_names": [midi_to_note_name(n) for n in notes],
+        })
+    return out
+
+
+def _symbol_to_root_quality(symbol: str, key_pc: int | None) -> tuple[int, str]:
+    """Resolve a roman numeral (needs key) or chord symbol to (root_pc, quality)."""
+    token = symbol.strip()
+    if _looks_like_roman(token) and key_pc is not None:
+        offset, quality = parse_roman(token)
+        return (key_pc + offset) % 12, quality
+    return parse_chord_symbol(token)
+
+
+def _symbol_name(root_pc: int, quality: str) -> str:
+    """Build a chord symbol string from a root pitch class and quality."""
+    return _NOTE_NAMES_SHARP[root_pc] + _QUALITY_LABEL.get(quality, quality)
+
+
+def reharmonize(
+    progression: list[str],
+    key: str | None = None,
+    strategy: str = "tritone_sub",
+) -> list[str]:
+    """Apply a jazz reharmonization strategy to a progression.
+
+    Returns a new list of chord symbols. Strategies:
+    - "tritone_sub": replace each dominant-7 chord with the dominant a tritone
+      away.
+    - "relative": swap major chords for their relative minor and vice versa.
+    - "secondary_dominant": precede each chord (after the first) with its own
+      dominant seventh (V7/x).
+    """
+    key_pc = parse_pitch_class(key) if key else None
+    resolved = [_symbol_to_root_quality(s, key_pc) for s in progression]
+    s = strategy.strip().lower()
+    out: list[str] = []
+
+    if s == "tritone_sub":
+        for root_pc, quality in resolved:
+            if quality in ("7", "9"):
+                out.append(_symbol_name((root_pc + 6) % 12, "7"))
+            else:
+                out.append(_symbol_name(root_pc, quality))
+    elif s == "relative":
+        for root_pc, quality in resolved:
+            if quality in ("maj", "maj7", "6"):
+                out.append(_symbol_name((root_pc + 9) % 12, "min"))
+            elif quality in ("min", "min7", "min6"):
+                out.append(_symbol_name((root_pc + 3) % 12, "maj"))
+            else:
+                out.append(_symbol_name(root_pc, quality))
+    elif s == "secondary_dominant":
+        for i, (root_pc, quality) in enumerate(resolved):
+            if i > 0:
+                out.append(_symbol_name((root_pc + 7) % 12, "7"))  # V7 of this
+            out.append(_symbol_name(root_pc, quality))
+    else:
+        raise ValueError(
+            f"unknown strategy: {strategy!r} "
+            f"(tritone_sub/relative/secondary_dominant)"
+        )
+    return out
+
+
+# =============================================================================
 # MCP tool registration
 # =============================================================================
 
@@ -800,6 +986,9 @@ def register_theory_tools(mcp: FastMCP) -> None:
 
     def _names(notes: list[int]) -> list[str]:
         return [midi_to_note_name(n) for n in notes]
+
+    def _invalid(msg: str) -> dict:
+        return {"success": False, "error": msg, "error_code": "INVALID_ARGS"}
 
     @mcp.tool()
     def fl_get_chord_notes(
@@ -1703,3 +1892,237 @@ def register_theory_tools(mcp: FastMCP) -> None:
             "in_scale_pitch_classes": in_scale_pcs,
             "in_scale_notes": [_NOTE_NAMES_SHARP[pc] for pc in in_scale_pcs],
         }
+
+    # --- T3 jazz tools -------------------------------------------------------
+
+    def _place_chord_request(notes, time_beats, duration_beats, velocity):
+        return {
+            "action": "add_chord",
+            "time": time_beats,
+            "duration": duration_beats,
+            "notes": [{"midi": n, "velocity": velocity} for n in notes],
+        }
+
+    @mcp.tool()
+    def fl_get_jazz_voicing(
+        root: str,
+        quality: str = "maj7",
+        voicing: str = "rootless",
+        octave: int = 4,
+    ) -> dict:
+        """Compute a jazz voicing of a chord without placing it (pure helper).
+
+        Args:
+            root: Root note name (e.g. "C", "F#", "Bb").
+            quality: Chord quality (maj7, min7, 7, m7b5, dim7, ...).
+            voicing: "shell", "rootless" (3-5-7-9), "rootless_b" (7-9-3-5), or
+                     "quartal" (stacked fourths).
+            octave: Octave of the root.
+        """
+        try:
+            notes = jazz_voicing(root, quality, voicing, octave)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+        return {"success": True, "voicing": voicing, "notes": notes, "note_names": _names(notes)}
+
+    @mcp.tool()
+    def fl_place_jazz_chord(
+        root: str,
+        quality: str = "maj7",
+        voicing: str = "rootless",
+        position_bars: float = 1.0,
+        duration_bars: float = 1.0,
+        octave: int = 4,
+        beats_per_bar: float = 4.0,
+        velocity: float = 0.8,
+        auto_trigger: bool = True,
+    ) -> dict:
+        """Place a chord using a jazz voicing in the open piano roll.
+
+        Args:
+            root: Root note name.
+            quality: Chord quality.
+            voicing: shell / rootless / rootless_b / quartal.
+            position_bars: Bar to place at (1 = start of song).
+            duration_bars: Chord length in bars.
+            octave: Octave of the root.
+            beats_per_bar: Quarter notes per bar.
+            velocity: Note velocity 0.0-1.0.
+            auto_trigger: Trigger FL Studio automatically.
+        """
+        if position_bars < 1:
+            return _invalid("position_bars is 1-indexed and must be >= 1")
+        try:
+            notes = jazz_voicing(root, quality, voicing, octave)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+        time_beats = (position_bars - 1) * beats_per_bar
+        duration_beats = duration_bars * beats_per_bar
+        _write_request(_place_chord_request(notes, time_beats, duration_beats, velocity))
+        trigger_info = _get_trigger_info(auto_trigger)
+        return {
+            "success": True,
+            "notes": notes,
+            "note_names": _names(notes),
+            "voicing": voicing,
+            "message": f"Placed {root}{quality} ({voicing} voicing)." + trigger_info,
+        }
+
+    @mcp.tool()
+    def fl_place_ii_v_i(
+        key: str = "C",
+        start_bars: float = 1.0,
+        chord_duration_bars: float = 1.0,
+        octave: int = 4,
+        voicing: str = "rootless",
+        beats_per_bar: float = 4.0,
+        velocity: float = 0.8,
+        auto_trigger: bool = True,
+    ) -> dict:
+        """Place a ii-V-I (ii7 - V7 - Imaj7) jazz cadence in the given key.
+
+        Args:
+            key: Key for the cadence (the I chord's root).
+            start_bars: Bar to start at (1 = start of song).
+            chord_duration_bars: Length of each chord in bars.
+            octave: Octave of the chord roots.
+            voicing: Jazz voicing for all three chords (or "close" for plain
+                     stacked chords).
+            beats_per_bar: Quarter notes per bar.
+            velocity: Note velocity 0.0-1.0.
+            auto_trigger: Trigger FL Studio automatically.
+        """
+        if start_bars < 1:
+            return _invalid("start_bars is 1-indexed and must be >= 1")
+        try:
+            key_pc = parse_pitch_class(key)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+
+        degrees = [(2, "min7"), (7, "7"), (0, "maj7")]  # ii, V, I in semitones
+        duration_beats = chord_duration_bars * beats_per_bar
+        requests = []
+        placed = []
+        for i, (offset, quality) in enumerate(degrees):
+            root_name = _NOTE_NAMES_SHARP[(key_pc + offset) % 12]
+            if voicing.strip().lower() == "close":
+                notes = get_chord_notes(root_name, quality, octave)
+            else:
+                notes = jazz_voicing(root_name, quality, voicing, octave)
+            time_beats = (start_bars - 1) * beats_per_bar + i * duration_beats
+            requests.append(_place_chord_request(notes, time_beats, duration_beats, velocity))
+            placed.append({
+                "chord": root_name + _QUALITY_LABEL.get(quality, quality),
+                "notes": notes,
+                "note_names": _names(notes),
+                "time_beats": time_beats,
+            })
+        _write_request(requests)
+        trigger_info = _get_trigger_info(auto_trigger)
+        return {
+            "success": True,
+            "key": key,
+            "chords": placed,
+            "message": f"Placed ii-V-I in {key}." + trigger_info,
+        }
+
+    @mcp.tool()
+    def fl_extend_chord(
+        root: str,
+        quality: str = "maj7",
+        tensions: list | None = None,
+        octave: int = 4,
+    ) -> dict:
+        """Compute a chord's notes plus added tensions (pure helper).
+
+        Args:
+            root: Root note name.
+            quality: Base chord quality.
+            tensions: List of tensions to add: 9, 11, 13 or "b9", "#9", "#11",
+                      "b13".
+            octave: Octave of the root.
+        """
+        try:
+            notes = extend_chord(root, quality, tensions or [], octave)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+        return {
+            "success": True,
+            "notes": notes,
+            "note_names": _names(notes),
+            "tensions": tensions or [],
+        }
+
+    @mcp.tool()
+    def fl_get_chord_scale(root: str, quality: str = "maj7", octave: int = 4) -> dict:
+        """Suggest scale(s) to improvise over a chord, with their notes (pure).
+
+        Args:
+            root: Root note name.
+            quality: Chord quality.
+            octave: Octave for the returned scale notes.
+        """
+        try:
+            scales = get_chord_scale(root, quality, octave)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+        return {"success": True, "root": root, "quality": quality, "scales": scales}
+
+    @mcp.tool()
+    def fl_reharmonize(
+        progression: list[str],
+        key: str | None = None,
+        strategy: str = "tritone_sub",
+        place: bool = False,
+        start_bars: float = 1.0,
+        chord_duration_bars: float = 1.0,
+        octave: int = 4,
+        beats_per_bar: float = 4.0,
+        velocity: float = 0.8,
+        auto_trigger: bool = True,
+    ) -> dict:
+        """Reharmonize a progression with a jazz strategy; optionally place it.
+
+        Args:
+            progression: Roman numerals (needs ``key``) or chord symbols.
+            key: Key for interpreting roman numerals.
+            strategy: "tritone_sub", "relative", or "secondary_dominant".
+            place: If True, also place the reharmonized chords in the piano roll.
+            start_bars: Bar to start at when placing (1 = start).
+            chord_duration_bars: Length of each chord in bars when placing.
+            octave: Octave of the chord roots when placing.
+            beats_per_bar: Quarter notes per bar.
+            velocity: Note velocity 0.0-1.0.
+            auto_trigger: Trigger FL Studio automatically when placing.
+        """
+        if not progression:
+            return _invalid("progression must be a non-empty list")
+        try:
+            new_symbols = reharmonize(progression, key, strategy)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+
+        result = {
+            "success": True,
+            "strategy": strategy,
+            "original": list(progression),
+            "reharmonized": new_symbols,
+        }
+        if place:
+            if start_bars < 1:
+                return _invalid("start_bars is 1-indexed and must be >= 1")
+            try:
+                chords = progression_to_chords(new_symbols, key, octave, "close")
+            except ValueError as e:
+                return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+            duration_beats = chord_duration_bars * beats_per_bar
+            requests = []
+            for i, notes in enumerate(chords):
+                time_beats = (start_bars - 1) * beats_per_bar + i * duration_beats
+                requests.append(_place_chord_request(notes, time_beats, duration_beats, velocity))
+            _write_request(requests)
+            result["message"] = (
+                f"Reharmonized ({strategy}) and placed {len(chords)} chords."
+                + _get_trigger_info(auto_trigger)
+            )
+        return result

@@ -10,13 +10,16 @@ from fl_studio_mcp.tools.theory import (
     bars_to_beats,
     build_scale_sequence,
     detect_key,
+    extend_chord,
     generate_bassline,
     get_chord_notes,
+    get_chord_scale,
     get_diatonic_chords,
     get_scale_notes,
     harmonize_melody,
     identify_chord,
     interval_to_semitones,
+    jazz_voicing,
     midi_to_note_name,
     note_name_to_midi,
     note_to_midi,
@@ -24,6 +27,7 @@ from fl_studio_mcp.tools.theory import (
     parse_pitch_class,
     parse_roman,
     progression_to_chords,
+    reharmonize,
     voice_lead_progression,
 )
 
@@ -484,3 +488,92 @@ def test_detect_key_penalizes_out_of_scale():
 def test_detect_key_empty_raises():
     with pytest.raises(ValueError):
         detect_key([])
+
+
+# --- jazz voicings (T3) ------------------------------------------------------
+
+def test_jazz_voicing_shell():
+    assert jazz_voicing("C", "maj7", "shell", 4) == [60, 64, 71]
+
+
+def test_jazz_voicing_rootless_a():
+    assert jazz_voicing("C", "maj7", "rootless", 4) == [64, 67, 71, 74]
+
+
+def test_jazz_voicing_rootless_b():
+    assert jazz_voicing("C", "min7", "rootless_b", 4) == [70, 74, 75, 79]
+
+
+def test_jazz_voicing_quartal():
+    assert jazz_voicing("C", "maj7", "quartal", 4) == [60, 65, 70, 75]
+
+
+def test_jazz_voicing_invalid():
+    with pytest.raises(ValueError):
+        jazz_voicing("C", "maj7", "sideways")
+
+
+# --- extend chord (T3) -------------------------------------------------------
+
+def test_extend_chord_add9():
+    assert extend_chord("C", "maj7", [9], 4) == [60, 64, 67, 71, 74]
+
+
+def test_extend_chord_9_and_13():
+    assert extend_chord("C", "7", [9, 13], 4) == [60, 64, 67, 70, 74, 81]
+
+
+def test_extend_chord_altered_tension():
+    # b9 is root + 13
+    assert 73 in extend_chord("C", "7", ["b9"], 4)
+
+
+def test_extend_chord_invalid():
+    with pytest.raises(ValueError):
+        extend_chord("C", "maj7", ["b5"])
+
+
+# --- chord scale (T3) --------------------------------------------------------
+
+def test_get_chord_scale_min7_dorian():
+    scales = get_chord_scale("C", "min7", 4)
+    assert scales[0]["scale"] == "dorian"
+    assert scales[0]["notes"] == [60, 62, 63, 65, 67, 69, 70]
+
+
+def test_get_chord_scale_dominant():
+    scales = get_chord_scale("G", "7", 4)
+    names = [s["scale"] for s in scales]
+    assert names[0] == "mixolydian"
+    assert "altered" in names
+
+
+# --- reharmonization (T3) ----------------------------------------------------
+
+def test_reharmonize_tritone_sub():
+    assert reharmonize(["Dm7", "G7", "Cmaj7"], strategy="tritone_sub") == [
+        "Dm7", "C#7", "Cmaj7"
+    ]
+
+
+def test_reharmonize_tritone_sub_roman():
+    assert reharmonize(["I", "V7", "I"], key="C", strategy="tritone_sub") == [
+        "C", "C#7", "C"
+    ]
+
+
+def test_reharmonize_relative():
+    assert reharmonize(["C", "Am", "F", "G"], strategy="relative") == [
+        "Am", "C", "Dm", "Em"
+    ]
+
+
+def test_reharmonize_secondary_dominant():
+    assert reharmonize(["C", "F"], strategy="secondary_dominant") == [
+        "C", "C7", "F"
+    ]
+
+
+def test_reharmonize_invalid_strategy():
+    with pytest.raises(ValueError):
+        reharmonize(["C"], strategy="bogus")

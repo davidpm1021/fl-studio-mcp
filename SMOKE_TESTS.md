@@ -73,6 +73,52 @@ the FLStudioMCP MIDI controller enabled (and, for `fl_get_time_signature`, the
 
 ---
 
+# Sprint 7 Smoke Tests
+
+Manual cases for the 6 Sprint 7 tools (Theory T3 jazz). No FL scripts changed
+this sprint — placement reuses the existing `add_chord` bridge, so no FL restart
+or re-arm is needed (just the piano roll open + ComposeWithLLM armed as usual).
+Pure logic covered by `tests/test_theory.py` (130 unit tests).
+
+---
+
+## Pure helpers
+
+### `fl_get_jazz_voicing`
+
+- [ ] `fl_get_jazz_voicing("C", "maj7", "shell")` → [60, 64, 71] (root/3rd/7th).
+- [ ] `("C", "maj7", "rootless")` → [64, 67, 71, 74]; `"quartal"` → [60, 65, 70, 75].
+- [ ] invalid voicing → INVALID_ARGS.
+
+### `fl_extend_chord`
+
+- [ ] `fl_extend_chord("C", "maj7", [9])` → [60, 64, 67, 71, 74].
+- [ ] `("C", "7", [9, 13])` → includes 74 and 81; unknown tension → INVALID_ARGS.
+
+### `fl_get_chord_scale`
+
+- [ ] `fl_get_chord_scale("C", "min7")` → first scale "dorian" with its notes.
+- [ ] `("G", "7")` → mixolydian first, "altered" among options.
+
+## Placement (piano roll open + armed)
+
+### `fl_place_jazz_chord`
+
+- [ ] `fl_place_jazz_chord("D", "min7", "rootless")` → rootless Dm7 voicing in the piano roll; read back with `fl_get_piano_roll_state`.
+
+### `fl_place_ii_v_i`
+
+- [ ] `fl_place_ii_v_i(key="C")` → Dm7, G7, Cmaj7 (voiced) on consecutive bars.
+
+### `fl_reharmonize`
+
+- [ ] `fl_reharmonize(["Dm7","G7","Cmaj7"], strategy="tritone_sub")` → `reharmonized` = ["Dm7","C#7","Cmaj7"].
+- [ ] `fl_reharmonize(["C","Am","F","G"], strategy="relative")` → ["Am","C","Dm","Em"].
+- [ ] `fl_reharmonize(["I","V7","I"], key="C", strategy="tritone_sub", place=True)` → reharmonized + chords placed.
+- [ ] invalid strategy → INVALID_ARGS.
+
+---
+
 # Sprint 6 Smoke Tests
 
 Manual cases for the 17 Sprint 6 tools (Tier 4 + Theory T4 analysis). The
