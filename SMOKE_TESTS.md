@@ -73,6 +73,54 @@ the FLStudioMCP MIDI controller enabled (and, for `fl_get_time_signature`, the
 
 ---
 
+# Sprint 5 Smoke Tests
+
+Manual test cases for the 6 Sprint 5 tools (Theory T2 composition). All placement
+tools use the Piano Roll Scripting bridge (piano roll open + ComposeWithLLM
+armed). The pyscript changed this sprint (new `humanize`/`quantize` actions), so
+re-run ComposeWithLLM once before testing those two. The device script did NOT
+change this sprint. Pure logic is covered by `tests/test_theory.py` (97 unit
+tests).
+
+---
+
+## Pure helper
+
+### `fl_get_diatonic_chords`
+
+- [ ] `fl_get_diatonic_chords("C", "major")` → 7 chords: I/ii/iii/IV/V/vi/vii° with correct qualities (maj, min, min, maj, maj, min, dim).
+- [ ] `fl_get_diatonic_chords("C", "major", sevenths=True)` → Imaj7, ii7, iii7, IVmaj7, V7, vi7, viiø7.
+- [ ] `fl_get_diatonic_chords("C", "bogus")` → `INVALID_ARGS`.
+
+## Placement (piano roll open + armed)
+
+### `fl_place_progression_voiced`
+
+- [ ] `fl_place_progression_voiced(["I","IV","V","I"], key="C")` → four chords placed with smooth voicings (later chords stay close to the previous; pitch classes preserved). Read back with `fl_get_piano_roll_state` and confirm voices move minimally vs close position.
+
+### `fl_harmonize_melody`
+
+- [ ] `fl_harmonize_melody([{"midi":72,"time":0,"duration":1},{"midi":74,"time":1,"duration":1},{"midi":76,"time":2,"duration":1}], key="C")` → a chord under each melody note, each chord containing the melody note's pitch class.
+
+### `fl_generate_bassline`
+
+- [ ] `fl_generate_bassline(["I","IV","V","I"], key="C", style="root")` → one low root note per chord.
+- [ ] `style="walking"` → four notes per chord; `style="octaves"`/`"fifths"` → two notes per chord.
+- [ ] `style="bogus"` → `INVALID_ARGS`.
+
+### `fl_humanize_notes` (re-arm pyscript first)
+
+- [ ] Place a chord/notes, `fl_humanize_notes(timing_amount=0.05, velocity_amount=0.1)` → note times/velocities shift slightly (read back; times no longer perfectly aligned).
+- [ ] `timing_amount=-1` → `INVALID_ARGS`.
+
+### `fl_quantize_notes` (re-arm pyscript first)
+
+- [ ] Humanize some notes, then `fl_quantize_notes(grid=0.25, strength=1.0)` → note start times snap back to the 1/16 grid.
+- [ ] `strength=0.5` → notes move halfway to the grid.
+- [ ] `grid=0` → `INVALID_ARGS`; `strength=2` → `INVALID_ARGS`.
+
+---
+
 # Sprint 4 Smoke Tests
 
 Manual test cases for the 12 Sprint 4 tools (Tier 3 arrangement). Most use the

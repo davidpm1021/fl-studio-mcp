@@ -485,6 +485,203 @@ def bars_to_beats(bars: float, beats_per_bar: float) -> float:
 
 
 # =============================================================================
+# Composition helpers (Layer C, T2) -- pure, unit tested
+# =============================================================================
+
+_ROMAN_UPPER = ["I", "II", "III", "IV", "V", "VI", "VII"]
+
+# Reverse map: interval tuple -> canonical quality name (triads + sevenths).
+_QUALITY_BY_INTERVALS = {
+    (0, 4, 7): "maj",
+    (0, 3, 7): "min",
+    (0, 3, 6): "dim",
+    (0, 4, 8): "aug",
+    (0, 4, 7, 11): "maj7",
+    (0, 3, 7, 10): "min7",
+    (0, 4, 7, 10): "7",
+    (0, 3, 6, 10): "m7b5",
+    (0, 3, 6, 9): "dim7",
+}
+
+# Roman-numeral display suffix and case by quality.
+_ROMAN_LOWER_QUALITIES = {"min", "dim", "min7", "m7b5", "dim7", "min6"}
+_ROMAN_SUFFIX = {
+    "maj": "",
+    "min": "",
+    "dim": "°",
+    "aug": "+",
+    "maj7": "maj7",
+    "min7": "7",
+    "7": "7",
+    "m7b5": "ø7",
+    "dim7": "°7",
+}
+
+
+def _identify_quality(intervals: tuple[int, ...]) -> str:
+    """Name a chord from its sorted intervals-from-root; '?' if unrecognised."""
+    return _QUALITY_BY_INTERVALS.get(tuple(intervals), "?")
+
+
+def _roman_for_degree(degree_index: int, quality: str) -> str:
+    """Build a roman-numeral label for a scale degree (0-based) and quality."""
+    base = _ROMAN_UPPER[degree_index % 7]
+    if quality in _ROMAN_LOWER_QUALITIES:
+        base = base.lower()
+    return base + _ROMAN_SUFFIX.get(quality, "")
+
+
+def get_diatonic_chords(
+    key: str,
+    mode: str = "major",
+    sevenths: bool = False,
+    octave: int = 4,
+) -> list[dict]:
+    """Return the diatonic chords (triads or sevenths) of a key.
+
+    Each chord is built by stacking thirds within the scale. Returns a list of
+    dicts with degree (1-based), roman numeral, root name, quality, MIDI notes,
+    and note names.
+    """
+    canonical = _canonical_mode(mode)
+    intervals = SCALE_MODES[canonical]
+    n = len(intervals)
+    tonic = note_to_midi(key, octave)
+    # Extend the scale across enough octaves to stack thirds/sevenths.
+    ext = [tonic + intervals[i % n] + 12 * (i // n) for i in range(n * 3)]
+    sizes = [0, 2, 4, 6] if sevenths else [0, 2, 4]
+
+    chords = []
+    for deg in range(n):
+        notes = [ext[deg + s] for s in sizes]
+        root = notes[0]
+        rel = tuple(c - root for c in notes)
+        quality = _identify_quality(rel)
+        chords.append({
+            "degree": deg + 1,
+            "roman": _roman_for_degree(deg, quality),
+            "root": midi_to_note_name(root),
+            "quality": quality,
+            "notes": notes,
+            "note_names": [midi_to_note_name(c) for c in notes],
+        })
+    return chords
+
+
+def _voice_lead_chord(prev: list[int], chord: list[int]) -> list[int]:
+    """Pick the voicing of ``chord`` closest to the ``prev`` voicing.
+
+    Considers inversions across a few octave shifts and minimises the total
+    semitone movement (matched by sorted voice position).
+    """
+    base = sorted(chord)
+    size = len(base)
+    candidates = []
+    for shift in range(-2, 3):
+        shifted = [n + 12 * shift for n in base]
+        for inv in range(size):
+            voicing = sorted(shifted[inv:] + [n + 12 for n in shifted[:inv]])
+            candidates.append(voicing)
+
+    def cost(v: list[int]) -> int:
+        m = min(len(v), len(prev))
+        return sum(abs(v[i] - prev[i]) for i in range(m))
+
+    best = min(candidates, key=cost)
+    return [max(0, min(127, n)) for n in best]
+
+
+def voice_lead_progression(close_chords: list[list[int]]) -> list[list[int]]:
+    """Re-voice a progression for smooth voice leading.
+
+    The first chord is kept in its given (close) position; each subsequent chord
+    is voiced to minimise movement from the previous one.
+    """
+    if not close_chords:
+        return []
+    result = [sorted(close_chords[0])]
+    for chord in close_chords[1:]:
+        result.append(_voice_lead_chord(result[-1], chord))
+    return result
+
+
+def harmonize_melody(
+    melody_midi: list[int],
+    key: str,
+    mode: str = "major",
+    sevenths: bool = False,
+    octave: int = 3,
+) -> list[dict]:
+    """Choose a diatonic chord to harmonise each melody note.
+
+    For each note, picks a diatonic chord that contains the note's pitch class,
+    preferring the note as the chord root (then fifth, then third) and primary
+    triads (I/IV/V). Returns one chord dict per melody note. Notes with no
+    diatonic match fall back to the tonic chord.
+    """
+    diatonic = get_diatonic_chords(key, mode, sevenths, octave)
+
+    def rank(chord: dict, pc: int) -> tuple:
+        pcs = [n % 12 for n in chord["notes"]]
+        role = pcs.index(pc)
+        role_score = {0: 0, 2: 1, 1: 2}.get(role, 3)  # root, fifth, third
+        func_score = 0 if chord["degree"] in (1, 4, 5) else 1
+        return (role_score, func_score, chord["degree"])
+
+    result = []
+    for m in melody_midi:
+        pc = m % 12
+        candidates = [c for c in diatonic if pc in [n % 12 for n in c["notes"]]]
+        if candidates:
+            chosen = min(candidates, key=lambda c: rank(c, pc))
+        else:
+            chosen = diatonic[0]
+        result.append(chosen)
+    return result
+
+
+def generate_bassline(
+    chord_roots: list[int],
+    style: str = "root",
+    beats_per_chord: float = 4.0,
+) -> list[dict]:
+    """Generate bass notes from a sequence of chord root MIDI numbers.
+
+    Returns notes as dicts with ``midi``, ``offset`` (beats from the start of
+    the bassline), and ``duration`` (beats). Styles:
+    - "root": one sustained root note per chord.
+    - "octaves": root then root + 12, split across the chord.
+    - "fifths": root then the fifth (root + 7), split across the chord.
+    - "walking": four notes per chord (root, fifth, octave, fifth) as quarters.
+    """
+    s = style.strip().lower()
+    patterns = {
+        "root": [0],
+        "octaves": [0, 12],
+        "fifths": [0, 7],
+        "walking": [0, 7, 12, 7],
+    }
+    if s not in patterns:
+        raise ValueError(
+            f"unknown bass style: {style!r} (root/octaves/fifths/walking)"
+        )
+    offsets = patterns[s]
+    step = beats_per_chord / len(offsets)
+
+    notes: list[dict] = []
+    cursor = 0.0
+    for root in chord_roots:
+        for i, semis in enumerate(offsets):
+            notes.append({
+                "midi": root + semis,
+                "offset": cursor + i * step,
+                "duration": step,
+            })
+        cursor += beats_per_chord
+    return [n for n in notes if 0 <= n["midi"] <= 127]
+
+
+# =============================================================================
 # MCP tool registration
 # =============================================================================
 
@@ -878,4 +1075,348 @@ def register_theory_tools(mcp: FastMCP) -> None:
             "success": True,
             "semitones": semitones,
             "message": f"Transposed by {semitones} semitones." + trigger_info,
+        }
+
+    # --- T2 composition tools ------------------------------------------------
+
+    def _resolve_progression(progression, name):
+        """Return (symbols, error_dict). Exactly one of the inputs is used."""
+        if name:
+            if name not in NAMED_PROGRESSIONS:
+                return None, {
+                    "success": False,
+                    "error": f"unknown progression name: {name!r}. Known: "
+                    f"{sorted(NAMED_PROGRESSIONS)}",
+                    "error_code": "INVALID_ARGS",
+                }
+            return NAMED_PROGRESSIONS[name], None
+        if progression:
+            return progression, None
+        return None, {
+            "success": False,
+            "error": "provide either 'progression' or 'name'",
+            "error_code": "INVALID_ARGS",
+        }
+
+    @mcp.tool()
+    def fl_get_diatonic_chords(
+        key: str,
+        mode: str = "major",
+        sevenths: bool = False,
+        octave: int = 4,
+    ) -> dict:
+        """Get the diatonic chords of a key (pure; no placement).
+
+        Returns the seven chords built by stacking thirds within the scale, each
+        with its scale degree, roman numeral, root, quality, and notes.
+
+        Args:
+            key: Tonic note name, e.g. "C", "G", "Eb".
+            mode: Scale mode (major, minor, dorian, ...).
+            sevenths: If True, build seventh chords instead of triads.
+            octave: Octave of the tonic (C4 = middle C).
+        """
+        try:
+            chords = get_diatonic_chords(key, mode, sevenths, octave)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+        return {"success": True, "key": key, "mode": mode, "chords": chords}
+
+    @mcp.tool()
+    def fl_place_progression_voiced(
+        progression: list[str] | None = None,
+        name: str | None = None,
+        key: str = "C",
+        start_bars: float = 1.0,
+        chord_duration_bars: float = 1.0,
+        octave: int = 4,
+        beats_per_bar: float = 4.0,
+        velocity: float = 0.8,
+        auto_trigger: bool = True,
+    ) -> dict:
+        """Place a progression with smooth voice leading.
+
+        Like fl_place_progression, but each chord after the first is re-voiced
+        (inversions/octave) to minimise movement from the previous chord, giving
+        smoother voicings. Accepts an explicit ``progression`` (roman numerals
+        or chord symbols) or a ``name`` from the named library.
+
+        Args:
+            progression: Roman numerals or chord symbols.
+            name: Named progression instead of ``progression``.
+            key: Key for interpreting roman numerals.
+            start_bars: Bar to start at (1 = start of song).
+            chord_duration_bars: Length of each chord in bars.
+            octave: Octave of the first chord.
+            beats_per_bar: Quarter notes per bar.
+            velocity: Note velocity 0.0-1.0.
+            auto_trigger: Trigger FL Studio automatically.
+        """
+        if start_bars < 1:
+            return {
+                "success": False,
+                "error": "start_bars is 1-indexed and must be >= 1",
+                "error_code": "INVALID_ARGS",
+            }
+        symbols, err = _resolve_progression(progression, name)
+        if err:
+            return err
+        try:
+            close = progression_to_chords(symbols, key, octave, "close")
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+
+        voiced = voice_lead_progression(close)
+        duration_beats = chord_duration_bars * beats_per_bar
+        requests = []
+        placed = []
+        for i, notes in enumerate(voiced):
+            time_beats = (start_bars - 1) * beats_per_bar + i * duration_beats
+            requests.append({
+                "action": "add_chord",
+                "time": time_beats,
+                "duration": duration_beats,
+                "notes": [{"midi": n, "velocity": velocity} for n in notes],
+            })
+            placed.append({
+                "symbol": symbols[i],
+                "notes": notes,
+                "note_names": _names(notes),
+                "time_beats": time_beats,
+            })
+        _write_request(requests)
+        trigger_info = _get_trigger_info(auto_trigger)
+        return {
+            "success": True,
+            "key": key,
+            "chords": placed,
+            "message": f"Placed {len(voiced)} voice-led chords "
+            f"({', '.join(symbols)})." + trigger_info,
+        }
+
+    @mcp.tool()
+    def fl_harmonize_melody(
+        melody: list[dict],
+        key: str,
+        mode: str = "major",
+        sevenths: bool = False,
+        octave: int = 3,
+        velocity: float = 0.7,
+        auto_trigger: bool = True,
+    ) -> dict:
+        """Harmonise a melody with diatonic chords placed underneath.
+
+        For each melody note, picks a diatonic chord (in ``key``/``mode``) that
+        contains the note, preferring the note as root, then primary triads. The
+        chord is placed at the note's time and duration, below the melody.
+
+        Args:
+            melody: List of notes, each ``{"midi": int, "time": beats,
+                    "duration": beats}`` (time/duration in quarter notes).
+            key: Key for the harmonisation.
+            mode: Scale mode.
+            sevenths: Harmonise with seventh chords instead of triads.
+            octave: Octave for the chord roots (below the melody).
+            velocity: Chord note velocity 0.0-1.0.
+            auto_trigger: Trigger FL Studio automatically.
+        """
+        if not melody or not isinstance(melody, list):
+            return {
+                "success": False,
+                "error": "melody must be a non-empty list of note objects",
+                "error_code": "INVALID_ARGS",
+            }
+        try:
+            melody_midi = [int(n["midi"]) for n in melody]
+        except (KeyError, TypeError, ValueError):
+            return {
+                "success": False,
+                "error": "each melody note needs an integer 'midi' field",
+                "error_code": "INVALID_ARGS",
+            }
+        try:
+            chords = harmonize_melody(melody_midi, key, mode, sevenths, octave)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+
+        requests = []
+        placed = []
+        for note, chord in zip(melody, chords):
+            time_beats = note.get("time", 0)
+            duration_beats = note.get("duration", 1.0)
+            requests.append({
+                "action": "add_chord",
+                "time": time_beats,
+                "duration": duration_beats,
+                "notes": [{"midi": n, "velocity": velocity} for n in chord["notes"]],
+            })
+            placed.append({
+                "melody_midi": note["midi"],
+                "chord": chord["roman"],
+                "notes": chord["notes"],
+                "note_names": chord["note_names"],
+                "time_beats": time_beats,
+            })
+        _write_request(requests)
+        trigger_info = _get_trigger_info(auto_trigger)
+        return {
+            "success": True,
+            "key": key,
+            "harmonization": placed,
+            "message": f"Harmonised {len(placed)} melody notes." + trigger_info,
+        }
+
+    @mcp.tool()
+    def fl_generate_bassline(
+        progression: list[str] | None = None,
+        name: str | None = None,
+        key: str = "C",
+        style: str = "root",
+        start_bars: float = 1.0,
+        chord_duration_bars: float = 1.0,
+        octave: int = 2,
+        beats_per_bar: float = 4.0,
+        velocity: float = 0.9,
+        auto_trigger: bool = True,
+    ) -> dict:
+        """Generate and place a bassline from a chord progression.
+
+        Args:
+            progression: Roman numerals or chord symbols.
+            name: Named progression instead of ``progression``.
+            key: Key for interpreting roman numerals.
+            style: "root", "octaves", "fifths", or "walking".
+            start_bars: Bar to start at (1 = start of song).
+            chord_duration_bars: Length of each chord in bars.
+            octave: Bass octave (C2 by default).
+            beats_per_bar: Quarter notes per bar.
+            velocity: Note velocity 0.0-1.0.
+            auto_trigger: Trigger FL Studio automatically.
+        """
+        if start_bars < 1:
+            return {
+                "success": False,
+                "error": "start_bars is 1-indexed and must be >= 1",
+                "error_code": "INVALID_ARGS",
+            }
+        symbols, err = _resolve_progression(progression, name)
+        if err:
+            return err
+        try:
+            close = progression_to_chords(symbols, key, octave, "close")
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+
+        roots = [min(c) for c in close]
+        beats_per_chord = chord_duration_bars * beats_per_bar
+        try:
+            bass = generate_bassline(roots, style, beats_per_chord)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "error_code": "INVALID_ARGS"}
+
+        start_beat = (start_bars - 1) * beats_per_bar
+        notes = [
+            {
+                "midi": b["midi"],
+                "time": start_beat + b["offset"],
+                "duration": b["duration"],
+                "velocity": velocity,
+            }
+            for b in bass
+        ]
+        _write_request({"action": "add_notes", "notes": notes})
+        trigger_info = _get_trigger_info(auto_trigger)
+        return {
+            "success": True,
+            "style": style,
+            "count": len(notes),
+            "notes": [n["midi"] for n in notes],
+            "note_names": _names([n["midi"] for n in notes]),
+            "message": f"Placed {len(notes)}-note {style} bassline." + trigger_info,
+        }
+
+    @mcp.tool()
+    def fl_humanize_notes(
+        timing_amount: float = 0.05,
+        velocity_amount: float = 0.1,
+        selected_only: bool = True,
+        auto_trigger: bool = True,
+    ) -> dict:
+        """Add subtle random timing and velocity variation to piano roll notes.
+
+        Operates on the currently selected notes, or all notes if nothing is
+        selected. Requires the piano roll open with ComposeWithLLM armed.
+
+        Args:
+            timing_amount: Max timing jitter in beats (e.g. 0.05 of a quarter
+                           note). 0 disables timing jitter.
+            velocity_amount: Max velocity jitter (0.0-1.0 scale). 0 disables it.
+            selected_only: Humanise only selected notes (falls back to all when
+                           nothing is selected).
+            auto_trigger: Trigger FL Studio automatically.
+        """
+        if timing_amount < 0 or velocity_amount < 0:
+            return {
+                "success": False,
+                "error": "timing_amount and velocity_amount must be >= 0",
+                "error_code": "INVALID_ARGS",
+            }
+        _write_request({
+            "action": "humanize",
+            "timing": timing_amount,
+            "velocity": velocity_amount,
+            "selected_only": selected_only,
+        })
+        trigger_info = _get_trigger_info(auto_trigger)
+        return {
+            "success": True,
+            "timing_amount": timing_amount,
+            "velocity_amount": velocity_amount,
+            "message": "Humanized notes." + trigger_info,
+        }
+
+    @mcp.tool()
+    def fl_quantize_notes(
+        grid: float = 0.25,
+        strength: float = 1.0,
+        selected_only: bool = True,
+        auto_trigger: bool = True,
+    ) -> dict:
+        """Quantize piano roll note start times to a grid.
+
+        Operates on selected notes, or all notes if nothing is selected.
+        Requires the piano roll open with ComposeWithLLM armed.
+
+        Args:
+            grid: Grid size in beats (0.25 = 1/16 note, 0.5 = 1/8, 1.0 = 1/4).
+            strength: How far to move notes toward the grid, 0.0-1.0 (1.0 snaps
+                      fully, 0.5 moves halfway).
+            selected_only: Quantize only selected notes (falls back to all when
+                           nothing is selected).
+            auto_trigger: Trigger FL Studio automatically.
+        """
+        if grid <= 0:
+            return {
+                "success": False,
+                "error": "grid must be > 0 (in beats)",
+                "error_code": "INVALID_ARGS",
+            }
+        if not 0.0 <= strength <= 1.0:
+            return {
+                "success": False,
+                "error": "strength must be between 0.0 and 1.0",
+                "error_code": "INVALID_ARGS",
+            }
+        _write_request({
+            "action": "quantize",
+            "grid": grid,
+            "strength": strength,
+            "selected_only": selected_only,
+        })
+        trigger_info = _get_trigger_info(auto_trigger)
+        return {
+            "success": True,
+            "grid": grid,
+            "strength": strength,
+            "message": f"Quantized notes to a {grid}-beat grid." + trigger_info,
         }

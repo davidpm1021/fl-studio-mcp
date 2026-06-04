@@ -336,6 +336,12 @@ open and the ComposeWithLLM script armed once per session). Bars are 1-indexed;
 | `fl_place_scale` | Place a scale run (octaves, direction) |
 | `fl_place_arpeggio` | Place an arpeggio (up/down/updown) |
 | `fl_transpose_selection` | Transpose selected notes (or all) by semitones/interval |
+| `fl_get_diatonic_chords` | Get the diatonic chords of a key (pure; no placement) |
+| `fl_place_progression_voiced` | Place a progression with smooth voice leading |
+| `fl_harmonize_melody` | Harmonize a melody with diatonic chords underneath |
+| `fl_generate_bassline` | Generate a bassline (root/octaves/fifths/walking) from a progression |
+| `fl_humanize_notes` | Add subtle timing/velocity variation to piano roll notes |
+| `fl_quantize_notes` | Snap note start times to a grid (with strength) |
 
 Supported chord qualities: `maj, min, dim, aug, maj7, min7, 7, dim7, m7b5,
 sus2, sus4, 6, min6, 9, maj9, min9, add9`. Scale modes: `major, minor,
