@@ -267,7 +267,7 @@ def register_mixer_tools(mcp: FastMCP) -> None:
         }
 
     def _bad(msg: str) -> dict:
-        return _bad(msg)
+        return {"success": False, "error": msg, "error_code": "INVALID_ARGS"}
 
     @mcp.tool()
     def fl_get_selected_mixer_track() -> dict:
