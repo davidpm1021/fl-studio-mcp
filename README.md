@@ -210,6 +210,7 @@ fl-studio-mcp
 | `fl_record` | Toggle recording |
 | `fl_get_transport_status` | Get playback/recording state |
 | `fl_set_song_position` | Set playback position |
+| `fl_get_song_position` | Get current playback position (bars/ms/seconds/absticks) |
 | `fl_get_song_length` | Get song duration |
 | `fl_set_loop_mode` | Switch between pattern/song mode |
 | `fl_set_playback_speed` | Adjust playback speed (0.25x-4x) |
@@ -291,6 +292,8 @@ fl-studio-mcp
 | `fl_redo` | Redo the next action |
 | `fl_save_project` | Save the project to its current file |
 | `fl_get_project_info` | Get tempo, version, PPQ, modified flag, etc. |
+| `fl_is_project_modified` | Check whether the project has unsaved changes |
+| `fl_get_undo_history` | Get position within the undo history (counts only; step names not in API) |
 | `fl_get_time_signature` | Get the project time signature (Piano Roll Scripting; piano roll must be open) |
 
 > `fl_get_time_signature` uses the **Piano Roll Scripting** context (keystroke trigger), not the MIDI bridge. The piano roll must be open in FL Studio. All other General tools use the MIDI bridge.
@@ -301,6 +304,44 @@ fl-studio-mcp
 |------|-------------|
 | `fl_focus_window` | Focus a window (mixer, channel_rack, playlist, piano_roll, browser) |
 | `fl_get_window_state` | Get focused/visible windows and focused caption |
+
+### Patterns
+
+Patterns are **1-indexed**. FL Studio's API cannot *create* new patterns, only
+operate on existing ones.
+
+| Tool | Description |
+|------|-------------|
+| `fl_list_patterns` | List patterns with name, color, length (beats), and selection |
+| `fl_get_current_pattern` | Get the active pattern index and name |
+| `fl_select_pattern` | Select/jump to a pattern by index |
+| `fl_set_pattern_name` | Rename a pattern |
+| `fl_set_pattern_color` | Set a pattern's color (RGB 0-255) |
+| `fl_get_pattern_length` | Get a pattern's length in beats |
+
+### Music Theory (Layer C)
+
+Higher-level, music-aware tools. The two `fl_get_*` helpers are pure (no FL
+Studio needed); the `fl_place_*` and `fl_transpose_selection` tools write into
+the **open piano roll** via the Piano Roll Scripting bridge (piano roll must be
+open and the ComposeWithLLM script armed once per session). Bars are 1-indexed;
+`beats_per_bar` defaults to 4 (4/4).
+
+| Tool | Description |
+|------|-------------|
+| `fl_get_chord_notes` | Compute a chord's notes (pure; no placement) |
+| `fl_get_scale_notes` | Compute a scale's notes (pure; no placement) |
+| `fl_place_chord` | Place a chord (root, quality, voicing) in the piano roll |
+| `fl_place_progression` | Place a progression (roman numerals or chord symbols, or a named progression) |
+| `fl_place_scale` | Place a scale run (octaves, direction) |
+| `fl_place_arpeggio` | Place an arpeggio (up/down/updown) |
+| `fl_transpose_selection` | Transpose selected notes (or all) by semitones/interval |
+
+Supported chord qualities: `maj, min, dim, aug, maj7, min7, 7, dim7, m7b5,
+sus2, sus4, 6, min6, 9, maj9, min9, add9`. Scale modes: `major, minor,
+harmonic_minor, melodic_minor, dorian, phrygian, lydian, mixolydian, locrian`.
+Named progressions: `fifties, axis_of_awesome, andalusian, twelve_bar_blues,
+jazz_ii_v_i, pachelbel`.
 
 ## Example Workflows
 

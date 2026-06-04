@@ -91,12 +91,17 @@ def process_mcp_request():
         # Process all requests in order
         total_notes = 0
         notes_deleted = 0
+        notes_transposed = 0
         time_signature = None
 
         for request in requests:
             action = request.get("action")
 
-            if action == "clear":
+            if action == "transpose":
+                result = transpose_notes_in_piano_roll(request)
+                if result and result.get("status") == "success":
+                    notes_transposed += result.get("notes_transposed", 0)
+            elif action == "clear":
                 # Clear all notes
                 count = flp.score.noteCount
                 for i in range(count - 1, -1, -1):
@@ -130,7 +135,8 @@ def process_mcp_request():
             "status": "success",
             "requests_processed": len(requests),
             "notes_added": total_notes,
-            "notes_deleted": notes_deleted
+            "notes_deleted": notes_deleted,
+            "notes_transposed": notes_transposed
         }
 
         # Surface the time signature at the top level so the MCP server can read
@@ -259,6 +265,56 @@ def add_notes_to_piano_roll(request):
         return {
             "status": "success",
             "notes_added": len(notes)
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def transpose_notes_in_piano_roll(request):
+    """Transpose notes in the piano roll by a number of semitones.
+
+    Operates on selected notes only when selected_only is true and at least one
+    note is selected; otherwise transposes all notes. Modifying the Note object
+    returned by getNote updates the score in place (standard FL idiom).
+
+    Request format:
+    {
+        "action": "transpose",
+        "semitones": 12,
+        "selected_only": true
+    }
+    """
+    try:
+        semitones = int(request.get("semitones", 0))
+        selected_only = request.get("selected_only", True)
+
+        count = flp.score.noteCount
+        any_selected = False
+        if selected_only:
+            for i in range(count):
+                if flp.score.getNote(i).selected:
+                    any_selected = True
+                    break
+        use_selected = selected_only and any_selected
+
+        transposed = 0
+        for i in range(count):
+            note = flp.score.getNote(i)
+            if use_selected and not note.selected:
+                continue
+            new_number = note.number + semitones
+            if new_number < 0:
+                new_number = 0
+            elif new_number > 127:
+                new_number = 127
+            note.number = new_number
+            transposed += 1
+
+        return {
+            "status": "success",
+            "notes_transposed": transposed,
+            "scope": "selected" if use_selected else "all",
         }
 
     except Exception as e:

@@ -29,6 +29,7 @@ import device
 import general
 import midi
 import mixer
+import patterns
 import plugins
 import transport
 import ui
@@ -145,6 +146,8 @@ def dispatch_command(action: str, params: dict) -> dict:
         return handle_transport_set_loop_mode(params)
     elif action == "transport.setPlaybackSpeed":
         return handle_transport_set_playback_speed(params)
+    elif action == "transport.getSongPosition":
+        return handle_transport_get_song_position(params)
 
     # Mixer commands
     elif action == "mixer.getTrackCount":
@@ -245,6 +248,24 @@ def dispatch_command(action: str, params: dict) -> dict:
         return handle_general_save()
     elif action == "general.getProjectInfo":
         return handle_general_get_project_info()
+    elif action == "general.isProjectModified":
+        return handle_general_is_project_modified()
+    elif action == "general.getUndoHistory":
+        return handle_general_get_undo_history()
+
+    # Pattern commands
+    elif action == "patterns.list":
+        return handle_patterns_list()
+    elif action == "patterns.getCurrent":
+        return handle_patterns_get_current()
+    elif action == "patterns.select":
+        return handle_patterns_select(params)
+    elif action == "patterns.setName":
+        return handle_patterns_set_name(params)
+    elif action == "patterns.setColor":
+        return handle_patterns_set_color(params)
+    elif action == "patterns.getLength":
+        return handle_patterns_get_length(params)
 
     # UI / window commands
     elif action == "ui.focusWindow":
@@ -324,6 +345,38 @@ def handle_transport_set_playback_speed(params: dict) -> dict:
     speed = params.get("speed", 1.0)
     transport.setPlaybackSpeed(speed)
     return {"speed": speed}
+
+
+# SONGLENGTH_* mode constants for transport.getSongPos.
+_SONGLENGTH_MS = 0
+_SONGLENGTH_S = 1
+_SONGLENGTH_ABSTICKS = 2
+_SONGLENGTH_BARS = 3
+_SONGLENGTH_STEPS = 4
+_SONGLENGTH_TICKS = 5
+
+
+def handle_transport_get_song_position(params: dict) -> dict:
+    """Get the current playback position in the requested format."""
+    mode = params.get("mode", "bars")
+    if mode == "bars":
+        return {
+            "mode": "bars",
+            "bars": transport.getSongPos(_SONGLENGTH_BARS),
+            "steps": transport.getSongPos(_SONGLENGTH_STEPS),
+            "ticks": transport.getSongPos(_SONGLENGTH_TICKS),
+            "hint": transport.getSongPosHint(),
+        }
+    elif mode == "ms":
+        return {"mode": "ms", "ms": transport.getSongPos(_SONGLENGTH_MS)}
+    elif mode == "seconds":
+        return {"mode": "seconds", "seconds": transport.getSongPos(_SONGLENGTH_S)}
+    elif mode == "absticks":
+        return {
+            "mode": "absticks",
+            "absticks": transport.getSongPos(_SONGLENGTH_ABSTICKS),
+        }
+    return {"error": "Unknown mode: %s" % mode}
 
 
 # =============================================================================
@@ -984,6 +1037,109 @@ def handle_general_get_project_info() -> dict:
         info["ppq"] = None
 
     return info
+
+
+def handle_general_is_project_modified() -> dict:
+    """Report whether the project has unsaved changes.
+
+    getChangedFlag: 0 = unchanged, 1 = changed, 2 = changed since save but
+    unchanged since autosave.
+    """
+    flag = general.getChangedFlag()
+    return {"modified": flag != 0, "changed_flag": flag}
+
+
+def handle_general_get_undo_history() -> dict:
+    """Report position within the undo history.
+
+    The API exposes only position and counts, not the names of undo steps.
+    getUndoHistoryLast: current position (0 = most recent).
+    getUndoHistoryPos: number of items currently in the history.
+    getUndoHistoryCount: total number of items ever added.
+    """
+    return {
+        "position_hint": general.getUndoLevelHint(),
+        "current_pos": general.getUndoHistoryLast(),
+        "history_length": general.getUndoHistoryPos(),
+        "total_count": general.getUndoHistoryCount(),
+    }
+
+
+# =============================================================================
+# Pattern Handlers
+# =============================================================================
+
+
+def _pattern_summary(index: int) -> dict:
+    """Build a summary dict for the pattern at `index` (1-based)."""
+    color = patterns.getPatternColor(index)
+    r = color & 0xFF
+    g = (color >> 8) & 0xFF
+    b = (color >> 16) & 0xFF
+    return {
+        "index": index,
+        "name": patterns.getPatternName(index),
+        "color": color,
+        "rgb": [r, g, b],
+        "length_beats": patterns.getPatternLength(index),
+        "selected": patterns.isPatternSelected(index),
+    }
+
+
+def handle_patterns_list() -> dict:
+    """List patterns by 1-based index.
+
+    patternCount() only counts patterns modified from their default empty state,
+    so on a fresh project it returns 0 even though the active pattern exists.
+    Iterate up to max(patternCount, patternNumber) so the active pattern always
+    appears. Non-contiguous modified patterns beyond that range may still be
+    missed (an inherent API limitation; see KNOWN_GAPS).
+    """
+    count = patterns.patternCount()
+    active = patterns.patternNumber()
+    upper = count if count >= active else active
+    result = []
+    for i in range(1, upper + 1):
+        result.append(_pattern_summary(i))
+    return {"count": count, "active": active, "patterns": result}
+
+
+def handle_patterns_get_current() -> dict:
+    """Get the active pattern index and name."""
+    idx = patterns.patternNumber()
+    return {"index": idx, "name": patterns.getPatternName(idx)}
+
+
+def handle_patterns_select(params: dict) -> dict:
+    """Jump to and select the pattern at the given 1-based index."""
+    idx = params.get("index", 1)
+    patterns.jumpToPattern(idx)
+    return {"index": idx, "name": patterns.getPatternName(idx)}
+
+
+def handle_patterns_set_name(params: dict) -> dict:
+    """Rename the pattern at the given 1-based index."""
+    idx = params.get("index", 1)
+    name = params.get("name", "")
+    patterns.setPatternName(idx, name)
+    return {"index": idx, "name": patterns.getPatternName(idx)}
+
+
+def handle_patterns_set_color(params: dict) -> dict:
+    """Set the color of the pattern at the given 1-based index."""
+    idx = params.get("index", 1)
+    r = params.get("red", 0)
+    g = params.get("green", 0)
+    b = params.get("blue", 0)
+    color = (b << 16) | (g << 8) | r
+    patterns.setPatternColor(idx, color)
+    return {"index": idx, "color": color, "rgb": [r, g, b]}
+
+
+def handle_patterns_get_length(params: dict) -> dict:
+    """Get the length (in beats) of the pattern at the given 1-based index."""
+    idx = params.get("index", 1)
+    return {"index": idx, "length_beats": patterns.getPatternLength(idx)}
 
 
 # =============================================================================

@@ -185,6 +185,66 @@ def register_general_tools(mcp: FastMCP) -> None:
         }
 
     @mcp.tool()
+    def fl_is_project_modified() -> dict:
+        """Report whether the project has unsaved changes.
+
+        Maps FL Studio's changed flag to a boolean. The raw flag is also
+        returned: 0 = unchanged since last save, 1 = changed, 2 = changed since
+        last save but unchanged since the last autosave.
+        """
+        conn = get_connection()
+        try:
+            result = conn.send_command("general.isProjectModified")
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
+
+        if not result.get("success", False):
+            return {
+                "success": False,
+                "error": result.get("error", "Unknown error"),
+                "error_code": "API_ERROR",
+            }
+
+        return {
+            "success": True,
+            "modified": result.get("modified"),
+            "changed_flag": result.get("changed_flag"),
+        }
+
+    @mcp.tool()
+    def fl_get_undo_history() -> dict:
+        """Get the current position within FL Studio's undo history.
+
+        Returns the position hint (e.g. "3/10"), the current position index
+        (0 = most recent), the number of items currently in the history, and the
+        total number of items ever added.
+
+        Limitation: the FL Studio API does not expose the text/description of
+        individual undo steps, so this reports position and counts only, not a
+        list of named steps.
+        """
+        conn = get_connection()
+        try:
+            result = conn.send_command("general.getUndoHistory")
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "error_code": "FL_NOT_RUNNING"}
+
+        if not result.get("success", False):
+            return {
+                "success": False,
+                "error": result.get("error", "Unknown error"),
+                "error_code": "API_ERROR",
+            }
+
+        return {
+            "success": True,
+            "position_hint": result.get("position_hint"),
+            "current_pos": result.get("current_pos"),
+            "history_length": result.get("history_length"),
+            "total_count": result.get("total_count"),
+        }
+
+    @mcp.tool()
     def fl_get_time_signature() -> dict:
         """Get the project's overall time signature (numerator/denominator).
 
