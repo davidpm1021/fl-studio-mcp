@@ -20,14 +20,13 @@ if TYPE_CHECKING:
 
 def register_general_tools(mcp: FastMCP) -> None:
     """Register general project tools with the MCP server."""
-    from fl_studio_mcp.utils.connection import get_connection
-    from fl_studio_mcp.utils.fl_trigger import get_trigger, trigger_fl_studio
-
     # Piano roll bridge helpers (reused for the time signature read).
     from fl_studio_mcp.tools.piano_roll import (
         _get_response_file,
         _write_request,
     )
+    from fl_studio_mcp.utils.connection import get_connection
+    from fl_studio_mcp.utils.fl_trigger import get_trigger, trigger_fl_studio
 
     @mcp.tool()
     def fl_set_tempo(bpm: float) -> dict:

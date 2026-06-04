@@ -9,8 +9,11 @@ from fl_studio_mcp.tools.theory import (
     apply_voicing,
     bars_to_beats,
     build_scale_sequence,
+    generate_bassline,
     get_chord_notes,
+    get_diatonic_chords,
     get_scale_notes,
+    harmonize_melody,
     interval_to_semitones,
     midi_to_note_name,
     note_to_midi,
@@ -18,6 +21,7 @@ from fl_studio_mcp.tools.theory import (
     parse_pitch_class,
     parse_roman,
     progression_to_chords,
+    voice_lead_progression,
 )
 
 # --- pitch parsing -----------------------------------------------------------
@@ -267,3 +271,128 @@ def test_interval_invalid():
 def test_bars_to_beats():
     assert bars_to_beats(1, 4) == 4
     assert bars_to_beats(2, 3) == 6
+
+
+# --- diatonic chords (T2) ----------------------------------------------------
+
+def test_diatonic_triads_c_major():
+    chords = get_diatonic_chords("C", "major", sevenths=False, octave=4)
+    qualities = [c["quality"] for c in chords]
+    romans = [c["roman"] for c in chords]
+    assert qualities == ["maj", "min", "min", "maj", "maj", "min", "dim"]
+    assert romans == ["I", "ii", "iii", "IV", "V", "vi", "vii°"]
+    assert chords[0]["notes"] == [60, 64, 67]   # C
+    assert chords[4]["notes"] == [67, 71, 74]   # G
+    assert chords[6]["notes"] == [71, 74, 77]   # B dim
+
+
+def test_diatonic_sevenths_c_major():
+    chords = get_diatonic_chords("C", "major", sevenths=True, octave=4)
+    qualities = [c["quality"] for c in chords]
+    assert qualities == [
+        "maj7", "min7", "min7", "maj7", "7", "min7", "m7b5"
+    ]
+    assert chords[0]["notes"] == [60, 64, 67, 71]   # Cmaj7
+    assert chords[4]["notes"] == [67, 71, 74, 77]   # G7
+    assert chords[4]["roman"] == "V7"
+    assert chords[6]["roman"] == "viiø7"
+
+
+def test_diatonic_a_minor():
+    chords = get_diatonic_chords("A", "minor", octave=4)
+    assert chords[0]["quality"] == "min"   # i
+    assert chords[0]["root"] == "A4"
+    assert [c["quality"] for c in chords] == [
+        "min", "dim", "maj", "min", "min", "maj", "maj"
+    ]
+
+
+def test_diatonic_invalid_mode():
+    with pytest.raises(ValueError):
+        get_diatonic_chords("C", "bogus")
+
+
+# --- voice leading (T2) ------------------------------------------------------
+
+def _pcs(notes):
+    return sorted(set(n % 12 for n in notes))
+
+
+def test_voice_lead_preserves_pitch_classes():
+    close = [
+        get_chord_notes("C", "maj", 4),
+        get_chord_notes("F", "maj", 4),
+        get_chord_notes("G", "maj", 4),
+    ]
+    voiced = voice_lead_progression(close)
+    assert len(voiced) == 3
+    for original, v in zip(close, voiced):
+        assert _pcs(original) == _pcs(v)
+
+
+def test_voice_lead_first_chord_unchanged():
+    close = [[60, 64, 67], [65, 69, 72]]
+    voiced = voice_lead_progression(close)
+    assert voiced[0] == [60, 64, 67]
+
+
+def test_voice_lead_reduces_movement():
+    close = [[60, 64, 67], [65, 69, 72]]  # C -> F (close position)
+
+    def movement(a, b):
+        m = min(len(a), len(b))
+        return sum(abs(sorted(a)[i] - sorted(b)[i]) for i in range(m))
+
+    voiced = voice_lead_progression(close)
+    naive = movement(close[0], close[1])
+    led = movement(voiced[0], voiced[1])
+    assert led <= naive
+
+
+def test_voice_lead_empty():
+    assert voice_lead_progression([]) == []
+
+
+# --- harmonize melody (T2) ---------------------------------------------------
+
+def test_harmonize_melody_contains_each_note():
+    melody = [60, 62, 64, 65, 67]
+    chords = harmonize_melody(melody, "C", "major")
+    assert len(chords) == len(melody)
+    for m, c in zip(melody, chords):
+        assert m % 12 in [n % 12 for n in c["notes"]]
+
+
+def test_harmonize_melody_prefers_root_tonic():
+    # C in C major: prefer I (C as root) over IV/vi that also contain C.
+    chords = harmonize_melody([60], "C", "major")
+    assert chords[0]["roman"] == "I"
+
+
+# --- basslines (T2) ----------------------------------------------------------
+
+def test_bassline_root_one_note_per_chord():
+    bass = generate_bassline([36, 41, 43], "root", beats_per_chord=4)
+    assert [n["midi"] for n in bass] == [36, 41, 43]
+    assert [n["offset"] for n in bass] == [0, 4, 8]
+    assert all(n["duration"] == 4 for n in bass)
+
+
+def test_bassline_walking():
+    bass = generate_bassline([36], "walking", beats_per_chord=4)
+    assert [n["midi"] for n in bass] == [36, 43, 48, 43]
+    assert [n["offset"] for n in bass] == [0, 1, 2, 3]
+    assert all(n["duration"] == 1 for n in bass)
+
+
+def test_bassline_octaves_and_fifths():
+    oct_bass = generate_bassline([36], "octaves", beats_per_chord=4)
+    assert [n["midi"] for n in oct_bass] == [36, 48]
+    assert [n["offset"] for n in oct_bass] == [0, 2]
+    fifth_bass = generate_bassline([36], "fifths", beats_per_chord=4)
+    assert [n["midi"] for n in fifth_bass] == [36, 43]
+
+
+def test_bassline_invalid_style():
+    with pytest.raises(ValueError):
+        generate_bassline([36], "bogus")

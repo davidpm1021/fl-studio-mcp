@@ -66,6 +66,46 @@ and counts** within the undo history (`getUndoLevelHint`, `getUndoHistoryLast`,
 the **text/description** of individual undo steps, so the tool cannot return a
 named list of history entries — only where you are in the history.
 
+## Dropped/deferred in Sprint 4
+
+### `fl_add_pattern_to_playlist` / `fl_remove_playlist_clip`
+
+**Status:** Impossible — no clip placement API.
+
+The `playlist` module exposes track properties (`trackCount`, `getTrackName`,
+`setTrackName`, `getTrackColor`/`setTrackColor`, `muteTrack`, `soloTrack`,
+`selectTrack`, etc.) and performance/live-block helpers, but **no function to
+add or remove a pattern/audio clip on the playlist timeline**. There is no
+`addClip`/`placeClip`/`deleteClip` surface in any module. Playlist track
+editing tools ship in Sprint 4; clip placement does not.
+
+### `fl_list_markers` (arrangement)
+
+**Status:** Not reliable — no marker count in the arrangement context.
+
+`arrangement` exposes `getMarkerName(index)`, `jumpToMarker(delta, select)`, and
+`addAutoTimeMarker(time, name)`, but there is **no `markerCount`** and no
+marker-time getter, so arrangement markers cannot be reliably enumerated
+(probing indices is ambiguous because unnamed markers return `""`).
+`fl_add_marker` and `fl_jump_to_marker` ship in Sprint 4.
+
+Note: **piano roll** markers *can* be listed — `flpianoroll.score.markerCount`
+plus `getMarker(i)` exist — so `fl_get_piano_roll_markers` is provided instead
+(piano roll markers are time-signature/scale/pattern-length markers, distinct
+from arrangement markers).
+
+### `fl_remove_marker` (arrangement)
+
+**Status:** Impossible — no remove API. The arrangement markers module has no
+delete function.
+
+### `fl_clear_selection` (arrangement)
+
+**Status:** No API. The `arrangement` module has selection *getters*
+(`selectionStart`/`selectionEnd`) and the live-selection *setter*
+(`liveSelection`), but nothing to clear a selection. `fl_set_selection`
+(experimental, via `liveSelection`) ships; clearing does not.
+
 ## Other hard API limits (from the spec, not attempted)
 
 | Capability | Reality |

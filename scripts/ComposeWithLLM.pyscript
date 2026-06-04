@@ -14,6 +14,7 @@ Based on work from https://github.com/calvinw/fl-studio-mcp
 import flpianoroll as flp
 import json
 import os
+import random
 
 
 def get_script_dir():
@@ -92,7 +93,11 @@ def process_mcp_request():
         total_notes = 0
         notes_deleted = 0
         notes_transposed = 0
+        notes_humanized = 0
+        notes_quantized = 0
         time_signature = None
+        markers_data = None
+        timeline_selection = None
 
         for request in requests:
             action = request.get("action")
@@ -101,6 +106,14 @@ def process_mcp_request():
                 result = transpose_notes_in_piano_roll(request)
                 if result and result.get("status") == "success":
                     notes_transposed += result.get("notes_transposed", 0)
+            elif action == "humanize":
+                result = humanize_notes_in_piano_roll(request)
+                if result and result.get("status") == "success":
+                    notes_humanized += result.get("notes_humanized", 0)
+            elif action == "quantize":
+                result = quantize_notes_in_piano_roll(request)
+                if result and result.get("status") == "success":
+                    notes_quantized += result.get("notes_quantized", 0)
             elif action == "clear":
                 # Clear all notes
                 count = flp.score.noteCount
@@ -126,6 +139,10 @@ def process_mcp_request():
                     "numerator": flp.score.tsnum,
                     "denominator": flp.score.tsden,
                 }
+            elif action == "get_markers":
+                markers_data = collect_markers()
+            elif action == "get_timeline_selection":
+                timeline_selection = collect_timeline_selection()
 
         # Clear the request queue after processing
         with open(REQUEST_FILE, 'w') as f:
@@ -136,7 +153,9 @@ def process_mcp_request():
             "requests_processed": len(requests),
             "notes_added": total_notes,
             "notes_deleted": notes_deleted,
-            "notes_transposed": notes_transposed
+            "notes_transposed": notes_transposed,
+            "notes_humanized": notes_humanized,
+            "notes_quantized": notes_quantized
         }
 
         # Surface the time signature at the top level so the MCP server can read
@@ -144,6 +163,13 @@ def process_mcp_request():
         if time_signature is not None:
             response["numerator"] = time_signature["numerator"]
             response["denominator"] = time_signature["denominator"]
+
+        if markers_data is not None:
+            response["markerCount"] = markers_data["markerCount"]
+            response["markers"] = markers_data["markers"]
+
+        if timeline_selection is not None:
+            response.update(timeline_selection)
 
         return response
 
@@ -267,6 +293,126 @@ def add_notes_to_piano_roll(request):
             "notes_added": len(notes)
         }
 
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def collect_markers():
+    """Collect all piano roll markers with type-specific data.
+
+    Marker modes: 0 none, 6 pattern length, 8 time signature (tsnum/tsden),
+    9 start recording, 10 stop recording, 12 key/scale (scale_root/helper).
+    """
+    ppq = flp.score.PPQ
+    markers = []
+    for i in range(flp.score.markerCount):
+        m = flp.score.getMarker(i)
+        entry = {
+            "index": i,
+            "name": m.name,
+            "time_ticks": m.time,
+            "time": m.time / ppq if ppq > 0 else 0,
+            "mode": m.mode,
+        }
+        if m.mode == 8:  # time signature marker
+            entry["tsnum"] = m.tsnum
+            entry["tsden"] = m.tsden
+        elif m.mode == 12:  # key/scale marker
+            entry["scale_root"] = m.scale_root
+            entry["scale_helper"] = m.scale_helper
+        markers.append(entry)
+    return {"markerCount": flp.score.markerCount, "markers": markers}
+
+
+def collect_timeline_selection():
+    """Collect the piano roll timeline selection.
+
+    FL signals "no selection" inconsistently (the stub says start is -1, but in
+    practice end can come back as -1 with start 0), so require both endpoints to
+    be non-negative and end > start.
+    """
+    ppq = flp.score.PPQ
+    start, end = flp.score.getTimelineSelection()
+    has_selection = start >= 0 and end >= 0 and end > start
+    return {
+        "has_selection": has_selection,
+        "selection_start_ticks": start,
+        "selection_end_ticks": end,
+        "selection_start_beats": (start / ppq if ppq > 0 and has_selection else None),
+        "selection_end_beats": (end / ppq if ppq > 0 and has_selection else None),
+    }
+
+
+def _use_selected_scope(selected_only):
+    """Return whether to operate on selected notes only.
+
+    True when selected_only is set AND at least one note is selected; otherwise
+    operations apply to all notes (standard FL "no selection = all" behavior).
+    """
+    if not selected_only:
+        return False
+    for i in range(flp.score.noteCount):
+        if flp.score.getNote(i).selected:
+            return True
+    return False
+
+
+def humanize_notes_in_piano_roll(request):
+    """Add random timing/velocity variation to notes (in place).
+
+    Request: {"action": "humanize", "timing": beats, "velocity": 0-1,
+              "selected_only": bool}
+    """
+    try:
+        timing = float(request.get("timing", 0.05))
+        velocity_amt = float(request.get("velocity", 0.1))
+        selected_only = request.get("selected_only", True)
+        ppq = flp.score.PPQ
+        use_selected = _use_selected_scope(selected_only)
+
+        n = 0
+        for i in range(flp.score.noteCount):
+            note = flp.score.getNote(i)
+            if use_selected and not note.selected:
+                continue
+            if timing > 0:
+                offset = int(random.uniform(-timing, timing) * ppq)
+                note.time = max(0, note.time + offset)
+            if velocity_amt > 0:
+                v = note.velocity + random.uniform(-velocity_amt, velocity_amt)
+                note.velocity = max(0.0, min(1.0, v))
+            n += 1
+        return {"status": "success", "notes_humanized": n}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def quantize_notes_in_piano_roll(request):
+    """Snap note start times toward a grid (in place).
+
+    Request: {"action": "quantize", "grid": beats, "strength": 0-1,
+              "selected_only": bool}
+    """
+    try:
+        grid = float(request.get("grid", 0.25))
+        strength = float(request.get("strength", 1.0))
+        selected_only = request.get("selected_only", True)
+        ppq = flp.score.PPQ
+        grid_ticks = grid * ppq
+        if grid_ticks <= 0:
+            return {"status": "error", "message": "grid must be > 0"}
+        use_selected = _use_selected_scope(selected_only)
+
+        n = 0
+        for i in range(flp.score.noteCount):
+            note = flp.score.getNote(i)
+            if use_selected and not note.selected:
+                continue
+            snapped = round(note.time / grid_ticks) * grid_ticks
+            new_time = note.time + (snapped - note.time) * strength
+            note.time = int(round(new_time))
+            n += 1
+        return {"status": "success", "notes_quantized": n}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
